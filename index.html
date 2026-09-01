@@ -9,7 +9,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%B3%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,500;6..72,600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
 <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -45,120 +45,150 @@
   </form>
 </div>
 
-<div class="app" id="app" hidden>
-  <header class="head">
-    <div class="head-id">
-      <span class="eyebrow">Organizador de fatura</span>
-      <h1 id="cardName">Meu cartão</h1>
-    </div>
-    <div class="head-actions">
-      <button class="btn ghost" id="btnOut">Sair</button>
-      <button class="btn ghost" id="btnConfig">Ajustes</button>
-      <button class="btn primary" id="btnNew">Novo lançamento</button>
-    </div>
-  </header>
+<div class="shell" id="app" hidden>
 
-  <section class="strip">
-    <div>
-      <span class="eyebrow">Ciclo em andamento</span>
-      <div class="strip-track"><div class="strip-fill" id="stripFill" style="width:0%"></div></div>
-      <div class="strip-legend">
-        <span id="stripStart">—</span>
-        <span id="stripNow"></span>
-        <span id="stripEnd">—</span>
-      </div>
+  <aside class="side">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name" id="cardName">Meu cartão</span>
     </div>
-    <div class="strip-right">
-      <div class="strip-stat">
-        <span class="k">Fatura atual</span>
-        <span class="v" id="statCurrent">R$ 0,00</span>
-      </div>
-      <div class="strip-stat">
-        <span class="k">Parcelas futuras</span>
-        <span class="v" id="statFuture">R$ 0,00</span>
-      </div>
-    </div>
-  </section>
 
-  <section class="panel">
-    <div class="panel-head">
-      <h3>Limite do cartão</h3>
-      <button class="btn tiny ghost" id="btnLimit">Sincronizar com o banco</button>
-    </div>
-    <div class="limit">
-      <div class="limit-top">
-        <div class="limit-fig">
-          <span class="v" id="limFree">R$ 0</span>
-          <span class="of" id="limOf">disponível de R$ 0</span>
-        </div>
-        <span class="meta" id="limSync">—</span>
-      </div>
-      <div class="meter" id="limMeter" role="img" aria-label="Composição do limite"></div>
-      <div class="legend" id="limLegend"></div>
-      <p class="limit-note" id="limNote"></p>
-    </div>
-  </section>
+    <nav class="nav" aria-label="Seções">
+      <button class="nav-item is-on" data-view="painel" type="button">
+        <span class="nav-ico" aria-hidden="true"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.4" y="2.4" width="5.8" height="5.8" rx="1.6"/><rect x="9.8" y="2.4" width="5.8" height="5.8" rx="1.6"/><rect x="2.4" y="9.8" width="5.8" height="5.8" rx="1.6"/><rect x="9.8" y="9.8" width="5.8" height="5.8" rx="1.6"/></svg></span>Painel
+      </button>
+      <button class="nav-item" data-view="lancamentos" type="button">
+        <span class="nav-ico" aria-hidden="true"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.6h12M3 9h12M3 13.4h7.5"/></svg></span>Lançamentos
+        <span class="badge" id="navCount"></span>
+      </button>
+      <button class="nav-item" data-view="categorias" type="button">
+        <span class="nav-ico" aria-hidden="true"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="6.2"/><path d="M9 2.8v6.2h6.2"/></svg></span>Categorias
+      </button>
+    </nav>
 
-  <section class="panel">
-    <div class="inv-nav">
-      <button class="icon-btn" id="prevCycle" aria-label="Fatura anterior">‹</button>
-      <button class="icon-btn" id="nextCycle" aria-label="Próxima fatura">›</button>
-      <div class="inv-title">
-        <h2 id="invLabel">Fatura</h2>
+    <div class="side-foot">
+      <div class="side-card">
+        <span class="lab">Fatura fecha em</span>
+        <strong id="sideDays">—</strong>
+        <div class="side-track"><div class="side-fill" id="stripFill" style="width:0%"></div></div>
+        <span class="side-meta"><span id="stripStart">—</span><span id="stripEnd">—</span></span>
+      </div>
+      <button class="nav-item" id="btnConfig" type="button"><span class="nav-ico" aria-hidden="true"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="2.5"/><path d="M9 1.5v2.2M9 14.3v2.2M16.5 9h-2.2M3.7 9H1.5M14.3 3.7l-1.6 1.6M5.3 12.7l-1.6 1.6M14.3 14.3l-1.6-1.6M5.3 5.3 3.7 3.7"/></svg></span>Ajustes</button>
+      <button class="nav-item" id="btnOut" type="button"><span class="nav-ico" aria-hidden="true"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 13v1.8A1.7 1.7 0 0 1 8.8 16.5H4.2A1.7 1.7 0 0 1 2.5 14.8V3.2A1.7 1.7 0 0 1 4.2 1.5h4.6A1.7 1.7 0 0 1 10.5 3.2V5"/><path d="M15.5 9H7m8.5 0-2.6-2.6M15.5 9l-2.6 2.6"/></svg></span>Sair</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-l">
+        <h1 id="viewTitle">Painel</h1>
         <p id="invDates">—</p>
       </div>
-      <button class="btn tiny ghost" id="goToday">Ir para a atual</button>
-    </div>
-    <div class="inv-hero">
-      <p class="figure" id="invTotal">R$ 0,00</p>
-      <span class="pill" id="invStatus">—</span>
-    </div>
-    <div class="tiles">
-      <div class="tile">
-        <span class="k">Compras</span>
-        <span class="v" id="tileSpend">R$ 0,00</span>
-        <span class="sub" id="tileSpendSub">nenhum lançamento</span>
+      <div class="topbar-r">
+        <div class="cyc">
+          <button class="icon-btn" id="prevCycle" aria-label="Fatura anterior">‹</button>
+          <span class="cyc-label" id="invLabel">Fatura</span>
+          <button class="icon-btn" id="nextCycle" aria-label="Próxima fatura">›</button>
+        </div>
+        <button class="btn tiny" id="goToday" type="button">Atual</button>
+        <button class="btn primary" id="btnNew" type="button">Novo lançamento</button>
       </div>
-      <div class="tile">
-        <span class="k">Estornos</span>
-        <span class="v credit" id="tileCredit">R$ 0,00</span>
-        <span class="sub" id="tileCreditSub">nenhum crédito</span>
-      </div>
-      <div class="tile">
-        <span class="k">Parcelas de compras anteriores</span>
-        <span class="v" id="tileCarried">R$ 0,00</span>
-        <span class="sub" id="tileCarriedSub">nada parcelado</span>
-      </div>
-    </div>
-  </section>
+    </header>
 
-  <div class="cols">
-    <section class="panel">
-      <div class="panel-head">
-        <h3>Lançamentos da fatura</h3>
-        <span class="meta" id="entriesCount"></span>
+    <!-- ---------- painel ---------- -->
+    <section class="view" data-view="painel">
+      <div class="stats">
+        <article class="card stat">
+          <span class="stat-k"><i class="ico blue" aria-hidden="true"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.8" y="3.6" width="14.4" height="10.8" rx="2.2"/><path d="M1.8 7.4h14.4"/></svg></i>Fatura atual</span>
+          <strong class="stat-v" id="invTotal">R$ 0,00</strong>
+          <span class="stat-note" id="invStatus">—</span>
+          <div class="ticks" id="tickInvoice"></div>
+        </article>
+        <article class="card stat">
+          <span class="stat-k"><i class="ico violet" aria-hidden="true"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.4" y="3.4" width="13.2" height="12.2" rx="2.2"/><path d="M2.4 7.3h13.2M6.2 1.8v3M11.8 1.8v3"/></svg></i>Parcelas futuras</span>
+          <strong class="stat-v" id="statFuture">R$ 0,00</strong>
+          <span class="stat-note" id="statFutureNote">nada comprometido adiante</span>
+          <div class="ticks" id="tickFuture"></div>
+        </article>
+        <article class="card stat">
+          <span class="stat-k"><i class="ico green" aria-hidden="true"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.6 13.4a6.4 6.4 0 1 1 12.8 0"/><path d="M9 13.4 12.1 9.6"/></svg></i>Limite disponível</span>
+          <strong class="stat-v" id="limFree">R$ 0</strong>
+          <span class="stat-note" id="limOf">de R$ 0</span>
+          <div class="ticks" id="tickLimit"></div>
+        </article>
       </div>
-      <div id="entriesList"></div>
+
+      <div class="grid-2">
+        <article class="card">
+          <div class="card-head">
+            <h2>Fatura de <span id="invMonth">—</span></h2>
+            <span class="pill" id="invPill">—</span>
+          </div>
+          <p class="hero" id="invHero">R$ 0,00</p>
+          <div class="tiles">
+            <div class="tile">
+              <span class="k">Compras</span>
+              <span class="v" id="tileSpend">R$ 0,00</span>
+              <span class="sub" id="tileSpendSub">nenhum lançamento</span>
+            </div>
+            <div class="tile">
+              <span class="k">Estornos</span>
+              <span class="v credit" id="tileCredit">R$ 0,00</span>
+              <span class="sub" id="tileCreditSub">nenhum crédito</span>
+            </div>
+            <div class="tile">
+              <span class="k">Parcelas anteriores</span>
+              <span class="v" id="tileCarried">R$ 0,00</span>
+              <span class="sub" id="tileCarriedSub">nada parcelado</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h2>Limite do cartão</h2>
+            <button class="btn tiny" id="btnLimit" type="button">Sincronizar</button>
+          </div>
+          <p class="hero sm" id="limBig">R$ 0</p>
+          <span class="meta" id="limSync">—</span>
+          <div class="meter" id="limMeter" role="img" aria-label="Composição do limite"></div>
+          <div class="legend" id="limLegend"></div>
+          <p class="note" id="limNote"></p>
+        </article>
+      </div>
+
+      <article class="card">
+        <div class="card-head">
+          <h2>Próximas faturas</h2>
+          <span class="meta" id="committedMeta"></span>
+        </div>
+        <div class="chart"><div class="chart-inner" id="projChart"></div></div>
+        <p class="note" id="projNote">Cada barra soma o que já está lançado naquela fatura, incluindo as parcelas que ainda vão cair. Clique para abrir.</p>
+      </article>
     </section>
 
-    <section class="panel">
-      <div class="panel-head">
-        <h3>Por categoria</h3>
-        <span class="meta" id="catMeta"></span>
-      </div>
-      <div id="catList" class="cat"></div>
+    <!-- ---------- lançamentos ---------- -->
+    <section class="view" data-view="lancamentos" hidden>
+      <article class="card">
+        <div class="card-head">
+          <h2>Lançamentos da fatura</h2>
+          <span class="meta" id="entriesCount"></span>
+        </div>
+        <div id="entriesList"></div>
+      </article>
     </section>
-  </div>
 
-  <section class="panel">
-    <div class="panel-head">
-      <h3>Próximas faturas</h3>
-      <span class="meta" id="committedMeta"></span>
-    </div>
-    <div class="chart"><div class="chart-inner" id="projChart"></div></div>
-    <div class="chart-base"></div>
-    <p class="chart-note" id="projNote">Cada barra soma o que já está lançado naquela fatura, incluindo as parcelas que ainda vão cair. Clique para abrir.</p>
-  </section>
+    <!-- ---------- categorias ---------- -->
+    <section class="view" data-view="categorias" hidden>
+      <article class="card">
+        <div class="card-head">
+          <h2>Por categoria</h2>
+          <span class="meta" id="catMeta"></span>
+        </div>
+        <div id="catList"></div>
+      </article>
+    </section>
+  </main>
 </div>
 
 <!-- ============ lançamento ============ -->

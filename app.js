@@ -295,62 +295,74 @@ function render(){
   renderProjection(cur);
 }
 
+function ticks(el, ratio, tone, n){
+  n = n || 34;
+  var on = Math.round(Math.max(0, Math.min(1, ratio || 0)) * n);
+  var h = "";
+  for(var i=0;i<n;i++) h += '<span class="tick' + (i < on ? " on" + (tone ? " " + tone : "") : "") + '"></span>';
+  el.innerHTML = h;
+}
+
 function renderStrip(cur){
   var cfg = state.cfg;
-  var close = closingOf(cur,cfg), due = dueOf(cur,cfg);
-  var prevClose = closingOf(cur-1,cfg);
+  var close = closingOf(cur,cfg), prevClose = closingOf(cur-1,cfg);
   var t = parseISO(todayISO());
-  var span = dayDiff(prevClose, close);
-  var done = dayDiff(prevClose, t);
+  var span = dayDiff(prevClose, close), done = dayDiff(prevClose, t);
   var pct = span > 0 ? Math.max(0, Math.min(100, (done/span)*100)) : 0;
-  $("stripFill").style.width = pct.toFixed(1)+"%";
-  $("stripStart").textContent = "abriu " + fmtDM(prevClose);
-  $("stripEnd").innerHTML = "fecha <b>"+fmtDM(close)+"</b>";
-  var left = dayDiff(t, close);
-  $("stripNow").textContent = left === 0 ? "fecha hoje"
-    : left > 0 ? (left === 1 ? "falta 1 dia" : "faltam "+left+" dias")
-    : "vence "+fmtDM(due);
 
-  $("statCurrent").textContent = money(summarize(cur).net);
+  $("stripFill").style.width = pct.toFixed(1) + "%";
+  $("stripStart").innerHTML = "abriu <b>" + fmtDM(prevClose) + "</b>";
+  $("stripEnd").innerHTML = "fecha <b>" + fmtDM(close) + "</b>";
+
+  var left = dayDiff(t, close);
+  $("sideDays").textContent = left === 0 ? "hoje"
+    : left > 0 ? (left === 1 ? "1 dia" : left + " dias")
+    : "já fechou";
+
   var fut = futureCommitted();
+  var total = state.cfg.limitTotal || 0;
   $("statFuture").textContent = money(fut);
+  $("statFutureNote").textContent = fut ? "comprometido após a fatura atual" : "nada comprometido adiante";
+  ticks($("tickFuture"), total ? fut/total : 0, "violet");
 }
 
 function renderLimit(cur){
   var L = limitState();
   var over = L.livre < 0;
   var low = !over && L.total > 0 && L.livre < L.total * 0.12;
+  var freeTxt = over ? "− " + moneyLim(Math.abs(L.livre)) : moneyLim(L.livre);
 
-  var free = $("limFree");
-  free.textContent = over ? "− " + moneyLim(Math.abs(L.livre)) : moneyLim(L.livre);
-  free.className = "v" + (over ? " over" : low ? " low" : "");
-  $("limOf").textContent = (over ? "acima do limite de " : "disponível de ") + moneyLim(L.total);
+  $("limFree").textContent = freeTxt;
+  $("limFree").className = "stat-v" + (over ? " neg" : low ? " warn" : "");
+  $("limOf").textContent = (over ? "acima do limite de " : "de ") + moneyLim(L.total);
+  ticks($("tickLimit"), L.total ? L.livre / L.total : 0, over ? "warn" : "green");
 
-  var parts = [
-    { k:"prev", label:"Consumido (banco)", v:L.banco },
-    { k:"now",  label:"Lançado depois",    v:Math.max(0, L.novos) }
-  ];
-  var denom = Math.max(L.total, L.usado) || 1;
-  $("limMeter").innerHTML = parts.filter(function(p){ return p.v > 0; }).map(function(p){
-    return '<span class="seg s-'+p.k+'" style="flex:0 0 '+((p.v/denom)*100).toFixed(2)+'%"></span>';
-  }).join("");
+  $("limBig").textContent = freeTxt;
+  $("limBig").className = "hero sm" + (over ? " over" : low ? " low" : "");
+
+  /* medidor tracejado: consumido do banco, lançado depois, e o que sobra */
+  var N = 44, denom = Math.max(L.total, L.usado) || 1;
+  var a = Math.round((L.banco / denom) * N);
+  var b = Math.round((Math.max(0, L.novos) / denom) * N);
+  var h = "";
+  for(var i=0;i<N;i++) h += '<span class="tick' + (i < a ? " prev" : i < a + b ? " now" : "") + '"></span>';
+  $("limMeter").innerHTML = h;
   $("limMeter").setAttribute("aria-label",
-    "Limite de "+moneyLim(L.total)+": "+moneyLim(L.usado)+" consumidos, "+moneyLim(L.livre)+" disponíveis.");
+    "Limite de " + moneyLim(L.total) + ": " + moneyLim(L.usado) + " consumidos, " + moneyLim(L.livre) + " disponíveis.");
 
-  $("limLegend").innerHTML = parts.map(function(p){
-    return '<span class="lg"><i class="sw s-'+p.k+'"></i>'+p.label+' <b>'+moneyLim(p.v)+"</b></span>";
-  }).join("") + '<span class="lg"><i class="sw free"></i>Disponível <b>'+moneyLim(Math.max(0,L.livre))+"</b></span>";
+  $("limLegend").innerHTML =
+      '<span class="lg"><i class="sw s-prev"></i>Consumido (banco) <b>' + moneyLim(L.banco) + "</b></span>"
+    + '<span class="lg"><i class="sw s-now"></i>Lançado depois <b>' + moneyLim(Math.max(0, L.novos)) + "</b></span>"
+    + '<span class="lg"><i class="sw free"></i>Disponível <b>' + moneyLim(Math.max(0, L.livre)) + "</b></span>";
 
-  var sync = $("limSync");
   if(state.cfg.limitSyncedAt){
     var d = parseISO(state.cfg.limitSyncedAt);
     var age = dayDiff(d, parseISO(todayISO()));
-    sync.textContent = "banco em " + fmtDMY(d) + (age > 35 ? " · reveja" : "");
+    $("limSync").textContent = "banco em " + fmtDMY(d) + (age > 35 ? " · vale rever" : "");
   }else{
-    sync.textContent = "nunca sincronizado";
+    $("limSync").textContent = "nunca sincronizado";
   }
 
-  var note = $("limNote");
   var atual = summarize(cur).net;
   var msgs = [];
   if(over) msgs.push("O limite estourou em " + moneyLim(Math.abs(L.livre)) + ".");
@@ -359,38 +371,47 @@ function renderLimit(cur){
   msgs.push(L.novos !== 0
     ? "O consumido do banco vale de " + fmtDM(parseISO(state.cfg.limitSyncedAt || todayISO())) + "; por cima dele entra só o que você lançou aqui depois disso."
     : "Sincronize de novo depois de pagar a fatura, para o consumido acompanhar o banco.");
-  note.className = "limit-note" + (over || low ? " warn" : "");
-  note.textContent = msgs.join(" ");
+  $("limNote").className = "note" + (over || low ? " warn" : "");
+  $("limNote").textContent = msgs.join(" ");
 }
 
 function renderInvoice(c, cur){
   var cfg = state.cfg;
   var close = closingOf(c,cfg), due = dueOf(c,cfg);
   var s = summarize(c);
-  $("invLabel").textContent = cycleLabel(c,cfg);
-  $("invDates").textContent = "fecha "+fmtDMY(close)+"  ·  vence "+fmtDMY(due);
 
-  var total = $("invTotal");
-  total.textContent = s.net < 0 ? "− "+moneyAbs(s.net) : money(s.net);
-  total.classList.toggle("is-credit", s.net < 0);
+  $("invLabel").textContent = MONTHS_ABBR[due.m] + "/" + String(due.y).slice(2);
+  $("invMonth").textContent = cycleName(c, cfg);
+  $("invDates").textContent = "fecha " + fmtDMY(close) + " · vence " + fmtDMY(due);
 
-  var pill = $("invStatus");
-  pill.className = "pill " + (c === cur ? "open" : c < cur ? "closed" : "future");
-  var t = parseISO(todayISO());
-  var left = dayDiff(t, close);
-  pill.textContent = c === cur ? (left === 0 ? "aberta · fecha hoje" : "aberta · "+left+"d para fechar")
-    : c < cur ? "fechada" : "prevista";
+  var neg = s.net < 0;
+  var txt = neg ? "− " + moneyAbs(s.net) : money(s.net);
+  $("invHero").textContent = txt;
+  $("invHero").className = "hero" + (neg ? " is-credit" : "");
+  $("invTotal").textContent = txt;
+  $("invTotal").className = "stat-v" + (neg ? " credit" : "");
+  ticks($("tickInvoice"), cfg.limitTotal ? Math.abs(s.net)/cfg.limitTotal : 0, "");
 
+  var left = dayDiff(parseISO(todayISO()), close);
+  var estado = c === cur ? (left === 0 ? "fecha hoje" : "fecha em " + left + " dias")
+    : c < cur ? "fatura fechada" : "fatura prevista";
+  $("invPill").className = "pill " + (c === cur ? "open" : c < cur ? "closed" : "future");
+  $("invPill").textContent = c === cur ? "aberta" : c < cur ? "fechada" : "prevista";
+  $("invStatus").textContent = estado;
   $("goToday").hidden = (c === cur);
 
   $("tileSpend").textContent = money(s.spend);
   $("tileSpendSub").textContent = s.count === 0 ? "nenhum lançamento"
-    : s.count === 1 ? "1 lançamento" : s.count+" lançamentos";
-  $("tileCredit").textContent = s.credit ? "− "+money(s.credit) : money(0);
+    : s.count === 1 ? "1 lançamento" : s.count + " lançamentos";
+  $("tileCredit").textContent = s.credit ? "− " + money(s.credit) : money(0);
   $("tileCreditSub").textContent = s.credit ? "abatidos do total" : "nenhum crédito";
   $("tileCarried").textContent = money(s.carried);
-  var carriedCount = occurrencesIn(c).filter(function(o){ return o.k>1; }).length;
-  $("tileCarriedSub").textContent = carriedCount ? carriedCount+" parcela"+(carriedCount>1?"s":"")+" em andamento" : "nada parcelado";
+  var carriedCount = occurrencesIn(c).filter(function(o){ return o.k > 1; }).length;
+  $("tileCarriedSub").textContent = carriedCount
+    ? carriedCount + " parcela" + (carriedCount > 1 ? "s" : "") + " em andamento"
+    : "nada parcelado";
+
+  $("navCount").textContent = s.count || "";
 }
 
 function esc(s){
@@ -814,6 +835,21 @@ $("cfgCancel").addEventListener("click", function(){ closeSheet("cfgScrim"); });
 $("cfgClose").addEventListener("click", function(){ closeSheet("cfgScrim"); });
 
 /* ---------- navegação ---------- */
+var VIEW_NAMES = { painel:"Painel", lancamentos:"Lançamentos", categorias:"Categorias" };
+function setView(v){
+  Array.prototype.forEach.call(document.querySelectorAll(".view"), function(el){
+    el.hidden = el.getAttribute("data-view") !== v;
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".nav-item[data-view]"), function(b){
+    b.classList.toggle("is-on", b.getAttribute("data-view") === v);
+  });
+  $("viewTitle").textContent = VIEW_NAMES[v] || "Painel";
+  window.scrollTo(0, 0);
+}
+Array.prototype.forEach.call(document.querySelectorAll(".nav-item[data-view]"), function(b){
+  b.addEventListener("click", function(){ setView(this.getAttribute("data-view")); });
+});
+
 $("btnNew").addEventListener("click", function(){ openEntry(null); });
 $("btnConfig").addEventListener("click", openCfg);
 $("prevCycle").addEventListener("click", function(){ state.view--; render(); });
