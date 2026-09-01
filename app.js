@@ -402,7 +402,7 @@ function esc(s){
 function renderEntries(c){
   var list = $("entriesList");
   var occ = occurrencesIn(c);
-  $("entriesCount").textContent = occ.length ? occ.length+" na fatura" : "";
+  $("entriesCount").textContent = occ.length ? occ.length + (occ.length > 1 ? " lançamentos" : " lançamento") : "";
 
   if(!occ.length){
     list.innerHTML = '<div class="empty"><p>Nenhum lançamento nesta fatura ainda.</p>'
@@ -410,43 +410,36 @@ function renderEntries(c){
     return;
   }
 
-  var days = [], byDay = {};
+  var html = '<div class="ledger"><div class="led-head"><span>Data</span><span>Lançamento</span><span>Valor</span></div>';
+  var lastDate = null;
   occ.forEach(function(o){
-    var key = o.e.date;
-    if(!byDay[key]){ byDay[key]=[]; days.push(key); }
-    byDay[key].push(o);
-  });
+    var e = o.e, p = parseISO(e.date);
+    var cont = e.date === lastDate;   /* a data se repete só na primeira linha do dia */
+    lastDate = e.date;
 
-  var html = "";
-  days.forEach(function(d){
-    var p = parseISO(d);
-    var dayTotal = byDay[d].reduce(function(a,o){ return a + (o.e.isCredit ? -o.e.amount : o.e.amount); }, 0);
-    html += '<div class="day"><div class="day-head"><h4>'
-      + pad(p.d)+" de "+MONTHS[p.m]+'</h4><span>'+(dayTotal<0?"− "+moneyAbs(dayTotal):money(dayTotal))+'</span></div>';
-    byDay[d].forEach(function(o){
-      var e = o.e;
-      var chips = "";
-      if(e.installments > 1) chips += '<span class="chip inst">parcela '+o.k+"/"+o.n+'</span>';
-      if(e.isCredit) chips += '<span class="chip credit">estorno</span>';
-      var sub = [];
-      if(e.time) sub.push(e.time);
-      if(o.k > 1) sub.push("compra em "+fmtDM(parseISO(e.date)));
-      if(e.installments > 1) sub.push("total "+money(e.amount*e.installments));
-      if(e.note) sub.push(esc(e.note));
-      var catName = e.category || "Sem categoria";
-      html += '<div class="row"><div class="row-main"><div class="row-title">'
-        + dot(catName) + '<strong>'+esc(catName)+"</strong>" + chips
-        + '</div>' + (sub.length ? '<div class="row-sub">'+sub.join("  ·  ")+"</div>" : "")
-        + '</div><div class="row-amt'+(e.isCredit?" credit":"")+'">'
-        + (e.isCredit ? "− " : "") + money(e.amount) + '</div>'
-        + '<div class="row-acts">'
-        + '<button class="link-btn" data-act="edit" data-id="'+e.id+'">editar</button>'
-        + '<button class="link-btn" data-act="del" data-id="'+e.id+'">excluir</button>'
-        + "</div></div>";
-    });
-    html += "</div>";
+    var cat = e.category || "Sem categoria";
+    var chips = "";
+    if(e.installments > 1) chips += '<span class="chip inst">' + o.k + "/" + o.n + "</span>";
+    if(e.isCredit) chips += '<span class="chip credit">estorno</span>';
+
+    var sub = [];
+    if(e.time) sub.push(e.time);
+    if(o.k > 1) sub.push("compra em " + fmtDM(p));
+    if(e.installments > 1) sub.push("total " + money(e.amount * e.installments));
+    if(e.note) sub.push(esc(e.note));
+
+    html += '<div class="led-row">'
+      + '<span class="led-date' + (cont ? " cont" : "") + '"><b>' + pad(p.d) + "</b> " + MONTHS_ABBR[p.m] + "</span>"
+      + '<span class="led-main"><span class="led-title">' + dot(cat) + "<strong>" + esc(cat) + "</strong>" + chips + "</span>"
+      + (sub.length ? '<span class="led-sub">' + sub.join(" · ") + "</span>" : "")
+      + "</span>"
+      + '<span class="led-amt' + (e.isCredit ? " credit" : "") + '">' + (e.isCredit ? "− " : "") + money(e.amount) + "</span>"
+      + '<span class="led-acts">'
+      + '<button class="link-btn" data-act="edit" data-id="' + e.id + '">editar</button>'
+      + '<button class="link-btn" data-act="del" data-id="' + e.id + '">excluir</button>'
+      + "</span></div>";
   });
-  list.innerHTML = html;
+  list.innerHTML = html + "</div>";
 }
 
 function renderCats(c){
@@ -469,7 +462,7 @@ function renderCats(c){
     var w = Math.max(2, (Math.abs(r.v)/max)*100);
     var pct = Math.round((Math.abs(r.v)/totalAbs)*100);
     var neg = r.v < 0;
-    var fill = 'width:'+w.toFixed(1)+'%' + (neg ? "" : ";background:"+catColor(r.name));
+    var fill = 'width:'+w.toFixed(1)+'%';
     return '<div class="cat-row"><div class="cat-top"><span class="cat-name">'+dot(r.name)+esc(r.name)+"</span>"
       + '<span class="amt'+(neg?" credit":"")+'">'+(neg?"− "+moneyAbs(r.v):money(r.v))
       + '<span class="cat-pct">'+pct+"%</span></span></div>"
