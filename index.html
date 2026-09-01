@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Fatura em Ordem</title>
+<meta name="description" content="Organizador de fatura de cartão de crédito: lançamentos, parcelamento, estornos e limite.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%B3%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<div class="scrim auth" id="authScrim" hidden>
+  <form class="sheet auth-sheet" id="authForm" autocomplete="on">
+    <div class="auth-mark">💳</div>
+    <h1 id="authTitle">Fatura em Ordem</h1>
+    <p class="auth-sub" id="authSub">Digite a senha para abrir.</p>
+
+    <div class="field" id="authEmailField">
+      <label for="authEmail">E-mail</label>
+      <input id="authEmail" type="email" autocomplete="username" placeholder="voce@exemplo.com">
+    </div>
+
+    <div class="field">
+      <label for="authPass">Senha</label>
+      <input id="authPass" type="password" autocomplete="current-password" placeholder="Pelo menos 8 caracteres">
+    </div>
+
+    <div class="field" id="authConfirmField" hidden>
+      <label for="authConfirm">Repita a senha</label>
+      <input id="authConfirm" type="password" autocomplete="new-password">
+    </div>
+
+    <p class="auth-msg" id="authMsg"></p>
+
+    <button class="btn primary auth-go" id="authGo" type="submit">Entrar</button>
+
+    <div class="auth-links">
+      <button class="link-btn" id="authSwap" type="button">Criar acesso</button>
+      <button class="link-btn" id="authForget" type="button">Usar outro e-mail</button>
+    </div>
+  </form>
+</div>
+
+<div class="app" id="app" hidden>
+  <header class="head">
+    <div class="head-id">
+      <span class="eyebrow">Organizador de fatura</span>
+      <h1 id="cardName">Meu cartão</h1>
+    </div>
+    <div class="head-actions">
+      <button class="btn ghost" id="btnOut">Sair</button>
+      <button class="btn ghost" id="btnConfig">Ajustes</button>
+      <button class="btn primary" id="btnNew">Novo lançamento</button>
+    </div>
+  </header>
+
+  <section class="strip">
+    <div>
+      <span class="eyebrow">Ciclo em andamento</span>
+      <div class="strip-track"><div class="strip-fill" id="stripFill" style="width:0%"></div></div>
+      <div class="strip-legend">
+        <span id="stripStart">—</span>
+        <span id="stripNow"></span>
+        <span id="stripEnd">—</span>
+      </div>
+    </div>
+    <div class="strip-right">
+      <div class="strip-stat">
+        <span class="k">Fatura atual</span>
+        <span class="v" id="statCurrent">R$ 0,00</span>
+      </div>
+      <div class="strip-stat">
+        <span class="k">Parcelas futuras</span>
+        <span class="v" id="statFuture">R$ 0,00</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h3>Limite do cartão</h3>
+      <button class="btn tiny ghost" id="btnLimit">Sincronizar com o banco</button>
+    </div>
+    <div class="limit">
+      <div class="limit-top">
+        <div class="limit-fig">
+          <span class="v" id="limFree">R$ 0</span>
+          <span class="of" id="limOf">disponível de R$ 0</span>
+        </div>
+        <span class="meta" id="limSync">—</span>
+      </div>
+      <div class="meter" id="limMeter" role="img" aria-label="Composição do limite"></div>
+      <div class="legend" id="limLegend"></div>
+      <p class="limit-note" id="limNote"></p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="inv-nav">
+      <button class="icon-btn" id="prevCycle" aria-label="Fatura anterior">‹</button>
+      <button class="icon-btn" id="nextCycle" aria-label="Próxima fatura">›</button>
+      <div class="inv-title">
+        <h2 id="invLabel">Fatura</h2>
+        <p id="invDates">—</p>
+      </div>
+      <button class="btn tiny ghost" id="goToday">Ir para a atual</button>
+    </div>
+    <div class="inv-hero">
+      <p class="figure" id="invTotal">R$ 0,00</p>
+      <span class="pill" id="invStatus">—</span>
+    </div>
+    <div class="tiles">
+      <div class="tile">
+        <span class="k">Compras</span>
+        <span class="v" id="tileSpend">R$ 0,00</span>
+        <span class="sub" id="tileSpendSub">nenhum lançamento</span>
+      </div>
+      <div class="tile">
+        <span class="k">Estornos</span>
+        <span class="v credit" id="tileCredit">R$ 0,00</span>
+        <span class="sub" id="tileCreditSub">nenhum crédito</span>
+      </div>
+      <div class="tile">
+        <span class="k">Parcelas de compras anteriores</span>
+        <span class="v" id="tileCarried">R$ 0,00</span>
+        <span class="sub" id="tileCarriedSub">nada parcelado</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="cols">
+    <section class="panel">
+      <div class="panel-head">
+        <h3>Lançamentos da fatura</h3>
+        <span class="meta" id="entriesCount"></span>
+      </div>
+      <div id="entriesList"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h3>Por categoria</h3>
+        <span class="meta" id="catMeta"></span>
+      </div>
+      <div id="catList" class="cat"></div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h3>Próximas faturas</h3>
+      <span class="meta" id="committedMeta"></span>
+    </div>
+    <div class="chart"><div class="chart-inner" id="projChart"></div></div>
+    <div class="chart-base"></div>
+    <p class="chart-note" id="projNote">Cada barra soma o que já está lançado naquela fatura, incluindo as parcelas que ainda vão cair. Clique para abrir.</p>
+  </section>
+</div>
+
+<!-- ============ lançamento ============ -->
+<div class="scrim" id="entryScrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="entryTitle">
+    <div class="sheet-head">
+      <h2 id="entryTitle">Nova compra no cartão</h2>
+      <button class="close" id="entryClose" aria-label="Fechar">×</button>
+    </div>
+
+    <div class="field">
+      <label for="fAmount">Valor da parcela (R$)</label>
+      <input id="fAmount" class="money" type="text" inputmode="numeric" value="0,00" autocomplete="off">
+    </div>
+
+    <div class="two">
+      <div class="field">
+        <label for="fDate">Data da compra</label>
+        <input id="fDate" type="date">
+      </div>
+      <div class="field">
+        <label for="fTime">Hora</label>
+        <input id="fTime" type="time">
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="fCat">Categoria</label>
+      <div class="with-btn">
+        <select id="fCat"></select>
+        <button class="btn" id="fCatAdd" type="button" aria-label="Criar categoria">+</button>
+      </div>
+      <div class="add-cat" id="fCatNewWrap" hidden>
+        <input id="fCatNew" type="text" placeholder="Nome da nova categoria" autocomplete="off">
+        <button class="btn" id="fCatSave" type="button">Criar</button>
+      </div>
+    </div>
+
+    <div class="switch-row">
+      <span class="t">Estorno / crédito na fatura</span>
+      <button class="switch credit" id="fCredit" role="switch" aria-checked="false" aria-label="Estorno ou crédito na fatura"></button>
+    </div>
+
+    <div class="switch-row">
+      <span class="t">Parcelado</span>
+      <button class="switch" id="fInst" role="switch" aria-checked="false" aria-label="Parcelado"></button>
+    </div>
+
+    <div class="field" id="fInstWrap" hidden>
+      <label for="fInstN">Parcelas restantes</label>
+      <input id="fInstN" type="number" min="2" max="72" step="1" value="2">
+      <span class="hint" id="fInstHint">Total lançado: 2 x R$ 0,00 = R$ 0,00</span>
+    </div>
+
+    <div class="field">
+      <label for="fNote">Observação</label>
+      <textarea id="fNote" placeholder="Opcional"></textarea>
+    </div>
+
+    <span class="hint" id="fWhere">—</span>
+
+    <div class="sheet-foot">
+      <button class="btn ghost spacer" id="entryCancel" type="button">Cancelar</button>
+      <button class="btn" id="entrySaveMore" type="button">Salvar e lançar outro</button>
+      <button class="btn primary" id="entrySave" type="button">Lançar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ajustes ============ -->
+<div class="scrim" id="cfgScrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="cfgTitle">
+    <div class="sheet-head">
+      <h2 id="cfgTitle">Ajustes do cartão</h2>
+      <button class="close" id="cfgClose" aria-label="Fechar">×</button>
+    </div>
+
+    <div class="field">
+      <label for="cName">Nome do cartão</label>
+      <input id="cName" type="text" autocomplete="off" placeholder="Meu cartão">
+    </div>
+
+    <div class="two">
+      <div class="field">
+        <label for="cClose">Dia do fechamento</label>
+        <input id="cClose" type="number" min="1" max="31" step="1">
+      </div>
+      <div class="field">
+        <label for="cDue">Dia do vencimento</label>
+        <input id="cDue" type="number" min="1" max="31" step="1">
+      </div>
+    </div>
+    <span class="hint" id="cfgHint">—</span>
+
+    <div class="divider"></div>
+
+    <div class="field">
+      <span class="field-label">Categorias</span>
+      <div class="cat-manage" id="cfgCats"></div>
+      <div class="add-cat">
+        <input id="cCatNew" type="text" placeholder="Nova categoria" autocomplete="off">
+        <button class="btn" id="cCatAdd" type="button">Adicionar</button>
+      </div>
+      <span class="hint">Categorias em uso não podem ser removidas.</span>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="field">
+      <span class="field-label">Backup</span>
+      <div class="two">
+        <button class="btn" id="btnExport" type="button">Exportar arquivo</button>
+        <button class="btn" id="btnImport" type="button">Importar dados</button>
+      </div>
+      <span class="hint">Os dados já ficam salvos no Supabase. O arquivo serve como cópia extra e para trazer os lançamentos do artefato.</span>
+    </div>
+
+    <div class="sheet-foot">
+      <button class="btn ghost spacer" id="cfgCancel" type="button">Cancelar</button>
+      <button class="btn primary" id="cfgSave" type="button">Salvar ajustes</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ limite ============ -->
+<div class="scrim" id="limScrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="limTitle">
+    <div class="sheet-head">
+      <h2 id="limTitle">Sincronizar limite</h2>
+      <button class="close" id="limClose" aria-label="Fechar">×</button>
+    </div>
+
+    <span class="hint">Copie os dois números do app do banco. Eles valem na íntegra — o app não soma nem desconta nada deles.</span>
+
+    <div class="field">
+      <label for="lTotal">Limite total do cartão</label>
+      <input id="lTotal" class="money" type="text" inputmode="numeric" value="0,00" autocomplete="off">
+    </div>
+
+    <div class="field">
+      <label for="lUsed">Limite consumido, segundo o banco</label>
+      <input id="lUsed" class="money" type="text" inputmode="numeric" value="0,00" autocomplete="off">
+    </div>
+
+    <div class="calc" id="lCalc"></div>
+
+    <div class="switch-row">
+      <span class="t">Meu banco não mostra os centavos</span>
+      <button class="switch" id="lRound" role="switch" aria-checked="true" aria-label="Banco não mostra centavos"></button>
+    </div>
+
+    <div class="sheet-foot">
+      <button class="btn ghost spacer" id="limCancel" type="button">Cancelar</button>
+      <button class="btn primary" id="limSave" type="button">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ excluir ============ -->
+<div class="scrim" id="delScrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="delTitle" style="max-width:400px">
+    <div class="sheet-head">
+      <h2 id="delTitle">Excluir lançamento</h2>
+      <button class="close" id="delClose" aria-label="Fechar">×</button>
+    </div>
+    <p id="delBody" style="color:var(--ink-2);font-size:14px"></p>
+    <div class="sheet-foot">
+      <button class="btn ghost spacer" id="delCancel" type="button">Cancelar</button>
+      <button class="btn danger" id="delConfirm" type="button">Excluir</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ importar ============ -->
+<div class="scrim" id="impScrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="impTitle">
+    <div class="sheet-head">
+      <h2 id="impTitle">Importar dados</h2>
+      <button class="close" id="impClose" aria-label="Fechar">×</button>
+    </div>
+    <div class="field">
+      <label for="impFile">Arquivo exportado</label>
+      <input id="impFile" type="file" accept="application/json,.json">
+    </div>
+    <div class="field">
+      <label for="impText">Ou cole o conteúdo aqui</label>
+      <textarea id="impText" placeholder='{"entries":[ ... ]}' style="min-height:120px;font-family:var(--f-mono);font-size:12px"></textarea>
+    </div>
+    <span class="hint" id="impInfo">Cole aqui o arquivo que você exportou do artefato.</span>
+    <div class="sheet-foot">
+      <button class="btn ghost spacer" id="impCancel" type="button">Cancelar</button>
+      <button class="btn primary" id="impGo" type="button">Importar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>
