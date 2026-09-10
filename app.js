@@ -70,6 +70,7 @@ var DEFAULT_CFG = {
 
 var MONTHS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
 var MONTHS_ABBR = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+var WEEKDAYS = ["domingo","segunda","terça","quarta","quinta","sexta","sábado"];
 
 var brl = new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"});
 var brl0 = new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL",maximumFractionDigits:0});
@@ -115,6 +116,8 @@ var state = { cfg: JSON.parse(JSON.stringify(DEFAULT_CFG)), entries: [], view: n
 var session = null;
 
 function normalize(id, o){
+  var cycle = o.cycle === null || o.cycle === undefined || o.cycle === "" || !isFinite(+o.cycle)
+    ? null : Math.round(+o.cycle);
   return {
     id: id,
     amount: Math.max(0, Math.round(Number(o.amount)||0)),
@@ -124,6 +127,7 @@ function normalize(id, o){
     isCredit: !!o.isCredit,
     installments: Math.min(72, Math.max(1, Math.round(Number(o.installments)||1))),
     note: typeof o.note === "string" ? o.note.slice(0,400) : "",
+    cycle: cycle,
     createdAt: Number(o.createdAt) || 0
   };
 }
@@ -134,6 +138,7 @@ function entryToRow(e){
   return {
     id: e.id, user_id: session.user.id, amount: e.amount, date: e.date, time: e.time,
     category: e.category, is_credit: e.isCredit, installments: e.installments, note: e.note,
+    cycle: e.cycle,
     created_at: new Date(e.createdAt || Date.now()).toISOString()
   };
 }
@@ -141,6 +146,7 @@ function entryFromRow(r){
   return normalize(r.id, {
     amount: r.amount, date: r.date, time: r.time, category: r.category,
     isCredit: r.is_credit, installments: r.installments, note: r.note,
+    cycle: r.cycle,
     createdAt: r.created_at ? new Date(r.created_at).getTime() : 0
   });
 }
@@ -201,11 +207,19 @@ function putConfig(){
 
 /* ============================ cálculo ============================ */
 
-/* Cada compra ocupa `installments` faturas seguidas, a partir do ciclo da data. */
+/* O ciclo fica preso na fatura em que o lançamento foi feito (guardado em e.cycle).
+   Datas na virada do fechamento são inconsistentes no próprio banco, então a data
+   nunca deve reclassificar um lançamento já salvo — só serve de referência para exibição.
+   Lançamentos antigos, salvos antes de existir esse campo, ainda caem pela data. */
+function baseCycleOf(e){
+  return (e.cycle === null || e.cycle === undefined) ? cycleForDate(e.date, state.cfg) : e.cycle;
+}
+
+/* Cada compra ocupa `installments` faturas seguidas, a partir do ciclo em que foi lançada. */
 function occurrencesIn(c){
-  var cfg = state.cfg, out = [];
+  var out = [];
   state.entries.forEach(function(e){
-    var b = cycleForDate(e.date, cfg);
+    var b = baseCycleOf(e);
     if(c >= b && c < b + e.installments){
       out.push({ e:e, k:(c-b)+1, n:e.installments, base:b });
     }
@@ -218,22 +232,48 @@ function occurrencesIn(c){
   return out;
 }
 function summarize(c){
-  var s = { spend:0, credit:0, carried:0, count:0, net:0, byCat:{} };
+  var s = { spend:0, credit:0, carried:0, count:0, net:0, byCat:{}, byCatSub:{} };
   occurrencesIn(c).forEach(function(o){
     var v = o.e.amount;
     if(o.e.isCredit) s.credit += v; else s.spend += v;
     if(o.k > 1) s.carried += (o.e.isCredit ? -v : v);
     s.count++;
     var key = o.e.category || "Sem categoria";
-    s.byCat[key] = (s.byCat[key]||0) + (o.e.isCredit ? -v : v);
+    var signed = o.e.isCredit ? -v : v;
+    s.byCat[key] = (s.byCat[key]||0) + signed;
+    var sub = (o.e.note||"").trim() || "Outros";
+    if(!s.byCatSub[key]) s.byCatSub[key] = {};
+    s.byCatSub[key][sub] = (s.byCatSub[key][sub]||0) + signed;
   });
   s.net = s.spend - s.credit;
   return s;
 }
+/* Termos de nota já usados numa categoria, para sugerir como "subcategoria" ao digitar. */
+function noteStats(category){
+  var counts = {}, order = [];
+  state.entries.forEach(function(e){
+    var note = (e.note||"").trim();
+    if(!note) return;
+    if(category && e.category !== category) return;
+    if(!counts[note]){ counts[note] = 0; order.push(note); }
+    counts[note]++;
+  });
+  return order.map(function(n){ return { note:n, count:counts[n] }; })
+    .sort(function(a,b){ return b.count - a.count || a.note.localeCompare(b.note); });
+}
+function noteSuggestions(prefix, category){
+  var p = (prefix||"").trim().toLowerCase();
+  var list = noteStats(category);
+  if(p) list = list.filter(function(r){
+    var low = r.note.toLowerCase();
+    return low.indexOf(p) === 0 && low !== p;
+  });
+  return list.slice(0, 6);
+}
 /* Quanto de uma compra ainda reserva limite: as parcelas que caem na fatura aberta ou depois. */
 function limitHeldBy(e){
   var cur = currentCycle(state.cfg);
-  var b = cycleForDate(e.date, state.cfg);
+  var b = baseCycleOf(e);
   var n = 0;
   for(var k=0;k<e.installments;k++) if(b+k >= cur) n++;
   return (e.isCredit ? -1 : 1) * e.amount * n;
@@ -265,9 +305,9 @@ function autoReconcile(){
   return true;
 }
 function futureCommitted(){
-  var cfg = state.cfg, cur = currentCycle(cfg), total = 0;
+  var cur = currentCycle(state.cfg), total = 0;
   state.entries.forEach(function(e){
-    var b = cycleForDate(e.date, cfg);
+    var b = baseCycleOf(e);
     for(var k=0;k<e.installments;k++){
       if(b+k > cur) total += (e.isCredit ? -e.amount : e.amount);
     }
@@ -390,6 +430,8 @@ function renderInvoice(c, cur){
   $("invHero").className = "hero" + (neg ? " is-credit" : "");
   $("invTotal").textContent = txt;
   $("invTotal").className = "stat-v" + (neg ? " credit" : "");
+  $("topbarTotal").textContent = txt;
+  $("topbarTotal").className = "topbar-total" + (neg ? " credit" : "");
   ticks($("tickInvoice"), cfg.limitTotal ? Math.abs(s.net)/cfg.limitTotal : 0, "");
 
   var left = dayDiff(parseISO(todayISO()), close);
@@ -431,12 +473,20 @@ function renderEntries(c){
     return;
   }
 
-  var html = '<div class="ledger"><div class="led-head"><span>Data</span><span>Lançamento</span><span>Valor</span></div>';
+  var html = "";
   var lastDate = null;
   occ.forEach(function(o){
     var e = o.e, p = parseISO(e.date);
-    var cont = e.date === lastDate;   /* a data se repete só na primeira linha do dia */
-    lastDate = e.date;
+
+    if(e.date !== lastDate){                 /* novo dia: fecha o grupo anterior e abre um novo */
+      if(lastDate !== null) html += "</div>";
+      var wd = WEEKDAYS[new Date(p.y, p.m, p.d).getDay()];
+      html += '<div class="day-group"><div class="day-head">'
+        + '<span class="day-num">' + pad(p.d) + "</span>"
+        + '<span class="day-rest">' + MONTHS_ABBR[p.m] + " · " + wd + "</span>"
+        + "</div>";
+      lastDate = e.date;
+    }
 
     var cat = e.category || "Sem categoria";
     var chips = "";
@@ -450,7 +500,6 @@ function renderEntries(c){
     if(e.note) sub.push(esc(e.note));
 
     html += '<div class="led-row">'
-      + '<span class="led-date' + (cont ? " cont" : "") + '"><b>' + pad(p.d) + "</b> " + MONTHS_ABBR[p.m] + "</span>"
       + '<span class="led-main"><span class="led-title">' + dot(cat) + "<strong>" + esc(cat) + "</strong>" + chips + "</span>"
       + (sub.length ? '<span class="led-sub">' + sub.join(" · ") + "</span>" : "")
       + "</span>"
@@ -484,10 +533,27 @@ function renderCats(c){
     var pct = Math.round((Math.abs(r.v)/totalAbs)*100);
     var neg = r.v < 0;
     var fill = 'width:'+w.toFixed(1)+'%';
+
+    var subs = Object.keys(s.byCatSub[r.name]||{}).map(function(k){ return { name:k, v:s.byCatSub[r.name][k] }; })
+      .filter(function(x){ return x.v !== 0; })
+      .sort(function(a,b){ return Math.abs(b.v) - Math.abs(a.v); });
+    var subHtml = "";
+    if(subs.length > 1){
+      var subTotalAbs = subs.reduce(function(a,x){ return a + Math.abs(x.v); }, 0) || 1;
+      subHtml = '<div class="cat-subs">' + subs.map(function(x){
+        var sneg = x.v < 0;
+        var spct = Math.round((Math.abs(x.v)/subTotalAbs)*100);
+        return '<div class="cat-sub-row"><span class="cat-sub-name">'+esc(x.name)+"</span>"
+          + '<span class="cat-sub-amt'+(sneg?" credit":"")+'">'+(sneg?"− "+moneyAbs(x.v):money(x.v))
+          + '<span class="cat-sub-pct">'+spct+"%</span></span></div>";
+      }).join("") + "</div>";
+    }
+
     return '<div class="cat-row"><div class="cat-top"><span class="cat-name">'+dot(r.name)+esc(r.name)+"</span>"
       + '<span class="amt'+(neg?" credit":"")+'">'+(neg?"− "+moneyAbs(r.v):money(r.v))
       + '<span class="cat-pct">'+pct+"%</span></span></div>"
-      + '<div class="cat-track"><div class="cat-fill'+(neg?" credit":"")+'" style="'+fill+'"></div></div></div>';
+      + '<div class="cat-track"><div class="cat-fill'+(neg?" credit":"")+'" style="'+fill+'"></div></div>'
+      + subHtml + "</div>";
   }).join("");
 }
 
@@ -587,8 +653,8 @@ function syncInstHint(){
   $("fInstHint").textContent = "Total lançado: "+n+" x "+money(c)+" = "+money(c*n);
 
   var cfg = state.cfg;
-  var date = $("fDate").value || todayISO();
-  var b = cycleForDate(date, cfg);
+  var existing = editingId ? state.entries.find(function(x){ return x.id===editingId; }) : null;
+  var b = existing ? baseCycleOf(existing) : state.view;
   var where = (credit ? "Crédito entra na fatura de " : "Entra na fatura de ") + cycleName(b,cfg);
   if(n > 1) where += ", indo até a de " + cycleName(b+n-1,cfg);
   $("fWhere").textContent = where + ".";
@@ -620,6 +686,65 @@ function commitNewCat(){
 }
 $("fCatSave").addEventListener("click", commitNewCat);
 $("fCatNew").addEventListener("keydown", function(ev){ if(ev.key === "Enter"){ ev.preventDefault(); commitNewCat(); }});
+
+/* ---------- sugestões de nota (subcategoria por categoria) ---------- */
+var noteSuggestIdx = -1;
+function hideNoteSuggest(){
+  $("fNoteSuggest").hidden = true;
+  $("fNoteSuggest").innerHTML = "";
+  noteSuggestIdx = -1;
+}
+function highlightNoteSuggest(items){
+  items.forEach(function(el,i){ el.classList.toggle("is-active", i === noteSuggestIdx); });
+}
+function updateNoteSuggest(){
+  var v = $("fNote").value;
+  if(!v.trim()){ hideNoteSuggest(); return; }
+  var items = noteSuggestions(v, $("fCat").value || null);
+  if(!items.length){ hideNoteSuggest(); return; }
+  $("fNoteSuggest").innerHTML = items.map(function(r){
+    return '<div class="note-suggest-item" data-note="'+esc(r.note)+'">'+esc(r.note)+"</div>";
+  }).join("");
+  $("fNoteSuggest").hidden = false;
+  noteSuggestIdx = -1;
+}
+$("fNote").addEventListener("input", updateNoteSuggest);
+$("fNote").addEventListener("focus", updateNoteSuggest);
+$("fCat").addEventListener("change", updateNoteSuggest);
+$("fNote").addEventListener("blur", function(){ setTimeout(hideNoteSuggest, 150); });
+$("fNoteSuggest").addEventListener("mousedown", function(ev){
+  var item = ev.target.closest(".note-suggest-item");
+  if(!item) return;
+  ev.preventDefault();
+  $("fNote").value = item.getAttribute("data-note");
+  hideNoteSuggest();
+  $("fNote").focus();
+});
+$("fNote").addEventListener("keydown", function(ev){
+  var box = $("fNoteSuggest");
+  if(box.hidden) return;
+  var items = box.querySelectorAll(".note-suggest-item");
+  if(!items.length) return;
+  if(ev.key === "ArrowDown"){
+    ev.preventDefault();
+    noteSuggestIdx = Math.min(items.length-1, noteSuggestIdx+1);
+    highlightNoteSuggest(items);
+  }else if(ev.key === "ArrowUp"){
+    ev.preventDefault();
+    noteSuggestIdx = Math.max(0, noteSuggestIdx-1);
+    highlightNoteSuggest(items);
+  }else if(ev.key === "Tab"){
+    var pick = items[noteSuggestIdx >= 0 ? noteSuggestIdx : 0];
+    $("fNote").value = pick.getAttribute("data-note");
+    hideNoteSuggest();
+  }else if(ev.key === "Enter" && noteSuggestIdx >= 0){
+    ev.preventDefault();
+    $("fNote").value = items[noteSuggestIdx].getAttribute("data-note");
+    hideNoteSuggest();
+  }else if(ev.key === "Escape"){
+    hideNoteSuggest();
+  }
+});
 
 /* ---------- abrir / salvar lançamento ---------- */
 var editingId = null;
@@ -656,6 +781,7 @@ function openEntry(entry){
     $("fNote").value = "";
   }
   syncInstHint();
+  hideNoteSuggest();
   openSheet("entryScrim");
   setTimeout(function(){ $("fAmount").focus(); }, 30);
 }
@@ -666,6 +792,7 @@ function collect(){
   var date = $("fDate").value;
   if(!date){ toast("Informe a data da compra."); $("fDate").focus(); return null; }
   var n = $("fInstWrap").hidden ? 1 : Math.min(72, Math.max(2, Math.round(+$("fInstN").value || 2)));
+  var existing = editingId ? state.entries.find(function(x){ return x.id===editingId; }) : null;
   return normalize(editingId || newId(), {
     amount: amount,
     date: date,
@@ -674,7 +801,9 @@ function collect(){
     isCredit: isOn($("fCredit")),
     installments: n,
     note: $("fNote").value.trim(),
-    createdAt: editingId ? (state.entries.find(function(x){ return x.id===editingId; })||{}).createdAt || Date.now() : Date.now()
+    /* fica preso na fatura em que foi lançado — editar a data não deve pular o lançamento de fatura. */
+    cycle: existing ? baseCycleOf(existing) : state.view,
+    createdAt: existing ? existing.createdAt || Date.now() : Date.now()
   });
 }
 
@@ -682,7 +811,7 @@ function saveEntry(keepOpen){
   var e = collect();
   if(!e) return;
   putEntry(e);
-  var cyc = cycleForDate(e.date, state.cfg);
+  var cyc = e.cycle;
   toast(editingId ? "Lançamento atualizado." :
     (e.installments > 1 ? e.installments+" parcelas lançadas a partir da fatura de "+cycleName(cyc,state.cfg)+"."
                         : "Lançado na fatura de "+cycleName(cyc,state.cfg)+"."));
@@ -696,6 +825,7 @@ function saveEntry(keepOpen){
     $("fInstWrap").hidden = true;
     $("fInstN").value = 2;
     syncInstHint();
+    hideNoteSuggest();
     $("fAmount").focus();
   }else{
     closeSheet("entryScrim");

@@ -81,7 +81,10 @@
   <main class="main">
     <header class="topbar">
       <div class="topbar-l">
-        <h1 id="viewTitle">Painel</h1>
+        <div class="topbar-title">
+          <h1 id="viewTitle">Painel</h1>
+          <span class="topbar-total" id="topbarTotal">R$ 0,00</span>
+        </div>
         <p id="invDates">—</p>
       </div>
       <div class="topbar-r">
@@ -245,7 +248,10 @@
 
     <div class="field">
       <label for="fNote">Observação</label>
-      <textarea id="fNote" placeholder="Opcional"></textarea>
+      <div class="note-wrap">
+        <textarea id="fNote" placeholder="Opcional" autocomplete="off"></textarea>
+        <div class="note-suggest" id="fNoteSuggest" hidden></div>
+      </div>
     </div>
 
     <span class="hint" id="fWhere">—</span>
