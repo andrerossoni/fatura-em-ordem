@@ -303,7 +303,8 @@ button{font:inherit;color:inherit;font-family:var(--f)}
 .cat-pct{font-size:11.5px;color:var(--muted);margin-left:8px;font-weight:500}
 .cat-subs{margin-top:9px;padding-left:17px;display:flex;flex-direction:column;gap:6px}
 .cat-sub-row{display:flex;justify-content:space-between;gap:12px;align-items:baseline;font-size:12px}
-.cat-sub-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-weight:500}
+.cat-sub-name{min-width:0;display:flex;align-items:center;gap:6px}
+.cat-sub-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-weight:500}
 .cat-sub-amt{font-weight:600;color:var(--ink-2);white-space:nowrap}
 .cat-sub-amt.credit{color:var(--pos)}
 .cat-sub-pct{font-size:10.5px;color:var(--muted);margin-left:6px;font-weight:500}
