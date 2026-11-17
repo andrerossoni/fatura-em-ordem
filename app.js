@@ -1136,6 +1136,7 @@ async function mergeCats(){
     if(chunk.error){ saveFail(chunk.error, "a troca de categorias"); return false; }
   }
   alvo.forEach(function(e){ e.note = e.category; e.category = CATS_MERGE[e.category]; });
+  toast(alvo.length + (alvo.length > 1 ? " lançamentos viraram subcategoria." : " lançamento virou subcategoria."));
   return true;
 }
 
@@ -1152,18 +1153,20 @@ async function enterApp(){
   state.view = null;
 
   var dirty = !res[0].data;
-  if(state.cfg.catsVersion !== CATS_VERSION){
-    if(state.cfg.catsVersion < 2){
-      /* listas antigas demais são trocadas inteiras, como sempre foi */
-      state.cfg.categories = DEFAULT_CATS.slice();
-      state.cfg.catsVersion = CATS_VERSION;
-      dirty = true;
-    }else if(await mergeCats()){
-      /* a lista do usuário é preservada: só saem os nomes que viraram subcategoria */
-      state.cfg.categories = state.cfg.categories.filter(function(c){ return !CATS_MERGE[c]; });
-      state.cfg.catsVersion = CATS_VERSION;
-      dirty = true;
-    }
+  if(state.cfg.catsVersion < 2){
+    /* listas antigas demais são trocadas inteiras, como sempre foi */
+    state.cfg.categories = DEFAULT_CATS.slice();
+    state.cfg.catsVersion = CATS_VERSION;
+    dirty = true;
+  }
+  /* A fusão é tentada em toda carga, não só quando a versão muda: sem nada para mover
+     ela é só um filtro em memória, e assim nenhum lançamento fica para trás se a versão
+     tiver sido gravada antes da hora ou se algo antigo for reimportado depois. */
+  if(await mergeCats()){
+    /* a lista do usuário é preservada: só saem os nomes que viraram subcategoria */
+    var limpa = state.cfg.categories.filter(function(c){ return !CATS_MERGE[c]; });
+    if(limpa.length !== state.cfg.categories.length){ state.cfg.categories = limpa; dirty = true; }
+    if(state.cfg.catsVersion !== CATS_VERSION){ state.cfg.catsVersion = CATS_VERSION; dirty = true; }
   }
   /* A reconciliação do limite depende dos lançamentos, então roda só agora. */
   if(autoReconcile()) dirty = true;
