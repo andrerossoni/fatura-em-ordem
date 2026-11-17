@@ -246,7 +246,8 @@ function summarize(c){
        separadas, cada uma com a sua parcela. */
     var sub = (o.e.note||"").trim() || "Outros";
     if(!s.byCatSub[key]) s.byCatSub[key] = [];
-    s.byCatSub[key].push({ name:sub, v:signed, k:o.k, n:o.n, parcela:v, total:v*o.e.installments });
+    s.byCatSub[key].push({ name:sub, v:signed, k:o.k, n:o.n, date:o.e.date,
+                           parcela:v, total:v*o.e.installments });
   });
   s.net = s.spend - s.credit;
   return s;
@@ -515,6 +516,47 @@ function renderEntries(c){
   list.innerHTML = html + "</div>";
 }
 
+/* Quais grupos de subcategoria estão abertos. Fica fora do render para a lista não
+   fechar sozinha a cada redesenho (editar um lançamento redesenha tudo). */
+var openSubs = {};
+
+function subAmt(v, pct){
+  var neg = v < 0;
+  return '<span class="cat-sub-amt'+(neg?" credit":"")+'">'+(neg?"− "+moneyAbs(v):money(v))
+    + (pct === null ? "" : '<span class="cat-sub-pct">'+pct+"%</span>") + "</span>";
+}
+/* Uma linha de subcategoria. Com `parc`, ela representa uma compra parcelada: ganha o
+   chip da parcela e, embaixo, quantas parcelas são e o total da compra. */
+function subItem(label, v, pct, parc, kid){
+  var chip = parc ? '<span class="chip inst">'+parc.k+"/"+parc.n+"</span>" : "";
+  var meta = "";
+  if(parc){
+    meta = '<div class="cat-sub-meta">'
+      + (kid ? "" : "compra em " + fmtDM(parseISO(parc.date)) + " · ")
+      + parc.n + "x de " + moneyAbs(parc.parcela) + " · total " + moneyAbs(parc.total) + "</div>";
+  }
+  return '<div class="cat-sub-item'+(kid?" is-kid":"")+'"><div class="cat-sub-row">'
+    + '<span class="cat-sub-name"><span class="cat-sub-label">'+esc(label)+"</span>"+chip+"</span>"
+    + subAmt(v, pct) + "</div>" + meta + "</div>";
+}
+/* Quando o mesmo nome tem mais de uma compra parcelada, as linhas viram um grupo que
+   abre e fecha: fechado mostra só o que o nome pesa nesta fatura; aberto, cada compra
+   com a sua parcela. */
+function subGroup(cat, g, pct){
+  var key = cat + "\u0000" + g.name;
+  var qtd = g.parcelados.length;
+  return '<details class="cat-sub-group" data-key="'+esc(key)+'"'+(openSubs[key]?" open":"")+'>'
+    + '<summary class="cat-sub-row"><span class="cat-sub-name">'
+    + '<span class="cat-caret" aria-hidden="true"></span>'
+    + '<span class="cat-sub-label">'+esc(g.name)+"</span>"
+    + '<span class="cat-sub-count">'+qtd+(qtd>1?" parceladas":" parcelada")+(g.avista!==0?" + à vista":"")+"</span></span>"
+    + subAmt(g.v, pct) + "</summary>"
+    + '<div class="cat-sub-kids">'
+    + g.parcelados.map(function(x){ return subItem(fmtDM(parseISO(x.date)), x.v, null, x, true); }).join("")
+    + (g.avista !== 0 ? subItem("à vista", g.avista, null, null, true) : "")
+    + "</div></details>";
+}
+
 function renderCats(c){
   var s = summarize(c);
   var rows = Object.keys(s.byCat).map(function(k){ return { name:k, v:s.byCat[k] }; })
@@ -537,41 +579,30 @@ function renderCats(c){
     var neg = r.v < 0;
     var fill = 'width:'+w.toFixed(1)+'%';
 
-    /* Só parcelado vira uma linha por compra, porque aí a parcela diz algo. O que foi
-       à vista continua somado por nome: senão uma categoria do dia a dia viraria
-       uma lista de "Outros" repetidos. */
-    var avista = {};
-    var subs = [];
+    /* Cada nome é um grupo. O que foi à vista entra somado — uma lista de "Outros"
+       repetidos não diz nada — e cada compra parcelada entra inteira, com a sua parcela. */
+    var grupos = [], porNome = {};
     (s.byCatSub[r.name]||[]).forEach(function(x){
-      if(x.n > 1){ subs.push(x); return; }
-      if(!avista[x.name]){ avista[x.name] = { name:x.name, v:0, n:1 }; subs.push(avista[x.name]); }
-      avista[x.name].v += x.v;
+      var g = porNome[x.name];
+      if(!g){ g = porNome[x.name] = { name:x.name, v:0, parcelados:[], avista:0 }; grupos.push(g); }
+      g.v += x.v;
+      if(x.n > 1) g.parcelados.push(x); else g.avista += x.v;
     });
-    subs = subs.filter(function(x){ return x.v !== 0; });
-    /* As compras de mesmo nome ficam juntas, e os nomes que mais pesam vêm antes. */
-    var peso = {};
-    subs.forEach(function(x){ peso[x.name] = (peso[x.name]||0) + Math.abs(x.v); });
-    subs.sort(function(a,b){
-      if(a.name !== b.name) return peso[b.name] - peso[a.name] || a.name.localeCompare(b.name);
-      return Math.abs(b.v) - Math.abs(a.v);
-    });
+    grupos = grupos.filter(function(g){ return g.v !== 0; });
+    grupos.forEach(function(g){ g.parcelados.sort(function(a,b){ return Math.abs(b.v) - Math.abs(a.v); }); });
+    /* os nomes que mais pesam vêm antes */
+    grupos.sort(function(a,b){ return Math.abs(b.v) - Math.abs(a.v) || a.name.localeCompare(b.name); });
+
     var subHtml = "";
-    /* Com uma compra só, a linha repetiria o total da categoria — vale a pena apenas
-       quando ela é parcelada, porque aí mostra a parcela e o total da compra. */
-    if(subs.length > 1 || (subs.length === 1 && subs[0].n > 1)){
-      var subTotalAbs = subs.reduce(function(a,x){ return a + Math.abs(x.v); }, 0) || 1;
-      subHtml = '<div class="cat-subs">' + subs.map(function(x){
-        var sneg = x.v < 0;
-        var spct = Math.round((Math.abs(x.v)/subTotalAbs)*100);
-        var chip = x.n > 1 ? '<span class="chip inst">'+x.k+"/"+x.n+"</span>" : "";
-        var meta = x.n > 1
-          ? '<div class="cat-sub-meta">'+x.n+"x de "+moneyAbs(x.parcela)+" · total "+moneyAbs(x.total)+"</div>"
-          : "";
-        return '<div class="cat-sub-item"><div class="cat-sub-row">'
-          + '<span class="cat-sub-name"><span class="cat-sub-label">'+esc(x.name)+"</span>"+chip+"</span>"
-          + '<span class="cat-sub-amt'+(sneg?" credit":"")+'">'+(sneg?"− "+moneyAbs(x.v):money(x.v))
-          + '<span class="cat-sub-pct">'+spct+"%</span></span></div>"
-          + meta + "</div>";
+    /* Um nome só e nada parcelado: a linha repetiria o total da categoria. */
+    if(grupos.length > 1 || (grupos.length === 1 && grupos[0].parcelados.length)){
+      var subTotalAbs = grupos.reduce(function(a,g){ return a + Math.abs(g.v); }, 0) || 1;
+      subHtml = '<div class="cat-subs">' + grupos.map(function(g){
+        var spct = Math.round((Math.abs(g.v)/subTotalAbs)*100);
+        /* Uma compra parcelada sozinha cabe na própria linha; não vale um grupo. */
+        if(g.parcelados.length === 1 && g.avista === 0) return subItem(g.name, g.v, spct, g.parcelados[0], false);
+        if(!g.parcelados.length) return subItem(g.name, g.v, spct, null, false);
+        return subGroup(r.name, g, spct);
       }).join("") + "</div>";
     }
 
@@ -581,6 +612,13 @@ function renderCats(c){
       + '<div class="cat-track"><div class="cat-fill'+(neg?" credit":"")+'" style="'+fill+'"></div></div>'
       + subHtml + "</div>";
   }).join("");
+
+  Array.prototype.forEach.call(box.querySelectorAll("details.cat-sub-group"), function(d){
+    d.addEventListener("toggle", function(){
+      var k = d.getAttribute("data-key");
+      if(d.open) openSubs[k] = true; else delete openSubs[k];
+    });
+  });
 }
 
 function renderProjection(cur){
