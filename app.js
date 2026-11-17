@@ -11,7 +11,6 @@ const sb = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 var CAT_SEED = [
   ["Academia/Personal","#3B82F6"],
   ["Aluguel","#A855F7"],
-  ["Amazon","#3B82F6"],
   ["Assinaturas/Streaming","#3B82F6"],
   ["Cartão ADC Rhaiane","#64748B"],
   ["Cartão de Crédito","#A855F7"],
@@ -28,7 +27,6 @@ var CAT_SEED = [
   ["IPVA/impostos Carro","#2DD4BF"],
   ["LOGA internet","#64748B"],
   ["Médicos/Saúde","#38BDF8"],
-  ["Mercado Livre","#EDC22E"],
   ["Mercado/Alimentação","#EF4444"],
   ["Padaria","#4ADE80"],
   ["PGMEI","#2DD4BF"],
@@ -51,8 +49,11 @@ function catColor(name){
 }
 function dot(name){ return '<span class="dot" style="background:'+catColor(name)+'"></span>'; }
 
-/* Lista de categorias substituída em 01/09/2026; a versão força a troca em quem já tinha a lista antiga. */
-var CATS_VERSION = 2;
+/* Lista de categorias substituída em 01/09/2026; a versão força a troca em quem já tinha a lista antiga.
+   Versão 3 (17/11/2026): Amazon e Mercado Livre deixaram de ser categorias e passaram a ser
+   subcategorias (a nota) dentro de Compras. */
+var CATS_VERSION = 3;
+var CATS_MERGE = { "Amazon":"Compras", "Mercado Livre":"Compras" };
 
 /* Limite informado pelo banco em 01/09/2026. Os números do banco JÁ contemplam todos os
    lançamentos existentes, então valem na íntegra: nada é somado nem descontado deles.
@@ -1116,6 +1117,28 @@ $("btnOut").addEventListener("click", async function(){
 
 /* ============================ carga ============================ */
 
+/* Cada categoria de CATS_MERGE vira subcategoria da categoria de destino: o lançamento
+   continua o mesmo, só muda de categoria e leva o nome antigo para a nota — que é o que
+   o app mostra como subcategoria. Só devolve true (e deixa gravar a versão) se o banco
+   aceitar todas as linhas; senão a migração tenta de novo na próxima abertura. */
+async function mergeCats(){
+  var alvo = state.entries.filter(function(e){ return CATS_MERGE[e.category]; });
+  if(!alvo.length) return true;
+  var rows = alvo.map(function(e){
+    var novo = normalize(e.id, e);
+    novo.createdAt = e.createdAt;
+    novo.note = e.category;
+    novo.category = CATS_MERGE[e.category];
+    return entryToRow(novo);
+  });
+  for(var i=0;i<rows.length;i+=200){
+    var chunk = await sb.from("entries").upsert(rows.slice(i, i+200));
+    if(chunk.error){ saveFail(chunk.error, "a troca de categorias"); return false; }
+  }
+  alvo.forEach(function(e){ e.note = e.category; e.category = CATS_MERGE[e.category]; });
+  return true;
+}
+
 async function enterApp(){
   var res = await Promise.all([
     sb.from("settings").select("*").maybeSingle(),
@@ -1130,9 +1153,17 @@ async function enterApp(){
 
   var dirty = !res[0].data;
   if(state.cfg.catsVersion !== CATS_VERSION){
-    state.cfg.categories = DEFAULT_CATS.slice();
-    state.cfg.catsVersion = CATS_VERSION;
-    dirty = true;
+    if(state.cfg.catsVersion < 2){
+      /* listas antigas demais são trocadas inteiras, como sempre foi */
+      state.cfg.categories = DEFAULT_CATS.slice();
+      state.cfg.catsVersion = CATS_VERSION;
+      dirty = true;
+    }else if(await mergeCats()){
+      /* a lista do usuário é preservada: só saem os nomes que viraram subcategoria */
+      state.cfg.categories = state.cfg.categories.filter(function(c){ return !CATS_MERGE[c]; });
+      state.cfg.catsVersion = CATS_VERSION;
+      dirty = true;
+    }
   }
   /* A reconciliação do limite depende dos lançamentos, então roda só agora. */
   if(autoReconcile()) dirty = true;
