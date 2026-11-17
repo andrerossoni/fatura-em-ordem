@@ -242,11 +242,11 @@ function summarize(c){
     var key = o.e.category || "Sem categoria";
     var signed = o.e.isCredit ? -v : v;
     s.byCat[key] = (s.byCat[key]||0) + signed;
+    /* Uma linha por compra, não por nome: duas compras com a mesma nota continuam
+       separadas, cada uma com a sua parcela. */
     var sub = (o.e.note||"").trim() || "Outros";
-    if(!s.byCatSub[key]) s.byCatSub[key] = {};
-    if(!s.byCatSub[key][sub]) s.byCatSub[key][sub] = { v:0, occs:[] };
-    s.byCatSub[key][sub].v += signed;
-    s.byCatSub[key][sub].occs.push({ k:o.k, n:o.n });
+    if(!s.byCatSub[key]) s.byCatSub[key] = [];
+    s.byCatSub[key].push({ name:sub, v:signed, k:o.k, n:o.n, parcela:v, total:v*o.e.installments });
   });
   s.net = s.spend - s.credit;
   return s;
@@ -537,23 +537,31 @@ function renderCats(c){
     var neg = r.v < 0;
     var fill = 'width:'+w.toFixed(1)+'%';
 
-    var subs = Object.keys(s.byCatSub[r.name]||{}).map(function(k){
-      var bucket = s.byCatSub[r.name][k];
-      return { name:k, v:bucket.v, occs:bucket.occs };
-    }).filter(function(x){ return x.v !== 0; })
-      .sort(function(a,b){ return Math.abs(b.v) - Math.abs(a.v); });
+    var subs = (s.byCatSub[r.name]||[]).filter(function(x){ return x.v !== 0; });
+    /* As compras de mesmo nome ficam juntas, e os nomes que mais pesam vêm antes. */
+    var peso = {};
+    subs.forEach(function(x){ peso[x.name] = (peso[x.name]||0) + Math.abs(x.v); });
+    subs.sort(function(a,b){
+      if(a.name !== b.name) return peso[b.name] - peso[a.name] || a.name.localeCompare(b.name);
+      return Math.abs(b.v) - Math.abs(a.v);
+    });
     var subHtml = "";
-    if(subs.length > 1){
+    /* Com uma compra só, a linha repetiria o total da categoria — vale a pena apenas
+       quando ela é parcelada, porque aí mostra a parcela e o total da compra. */
+    if(subs.length > 1 || (subs.length === 1 && subs[0].n > 1)){
       var subTotalAbs = subs.reduce(function(a,x){ return a + Math.abs(x.v); }, 0) || 1;
       subHtml = '<div class="cat-subs">' + subs.map(function(x){
         var sneg = x.v < 0;
         var spct = Math.round((Math.abs(x.v)/subTotalAbs)*100);
-        /* só dá pra mostrar a parcela quando a subcategoria representa um único lançamento parcelado */
-        var chip = (x.occs.length === 1 && x.occs[0].n > 1)
-          ? '<span class="chip inst">'+x.occs[0].k+"/"+x.occs[0].n+"</span>" : "";
-        return '<div class="cat-sub-row"><span class="cat-sub-name"><span class="cat-sub-label">'+esc(x.name)+"</span>"+chip+"</span>"
+        var chip = x.n > 1 ? '<span class="chip inst">'+x.k+"/"+x.n+"</span>" : "";
+        var meta = x.n > 1
+          ? '<div class="cat-sub-meta">'+x.n+"x de "+moneyAbs(x.parcela)+" · total "+moneyAbs(x.total)+"</div>"
+          : "";
+        return '<div class="cat-sub-item"><div class="cat-sub-row">'
+          + '<span class="cat-sub-name"><span class="cat-sub-label">'+esc(x.name)+"</span>"+chip+"</span>"
           + '<span class="cat-sub-amt'+(sneg?" credit":"")+'">'+(sneg?"− "+moneyAbs(x.v):money(x.v))
-          + '<span class="cat-sub-pct">'+spct+"%</span></span></div>";
+          + '<span class="cat-sub-pct">'+spct+"%</span></span></div>"
+          + meta + "</div>";
       }).join("") + "</div>";
     }
 
