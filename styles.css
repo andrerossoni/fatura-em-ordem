@@ -26,6 +26,7 @@
   --orange:#EE6C1F;
 
   --tick-off:#E3E5EA;
+  --zebra:#DFE3EB;
   --btn-ink:#0B0C0E;
   --btn-on:#FFFFFF;
   --ring:0 0 0 1px var(--line);
@@ -52,6 +53,7 @@
     --violet:#8B8BF0;
     --orange:#FF8B4D;
     --tick-off:#292C32;
+    --zebra:#262A32;
     --btn-ink:#F4F5F7;
     --btn-on:#0B0C0E;
     --lift:0 1px 2px rgba(0,0,0,.5), 0 10px 26px -18px rgba(0,0,0,.9);
@@ -76,6 +78,7 @@
   --violet:#8B8BF0;
   --orange:#FF8B4D;
   --tick-off:#292C32;
+  --zebra:#262A32;
   --btn-ink:#F4F5F7;
   --btn-on:#0B0C0E;
   --lift:0 1px 2px rgba(0,0,0,.5), 0 10px 26px -18px rgba(0,0,0,.9);
@@ -258,6 +261,8 @@ button{font:inherit;color:inherit;font-family:var(--f)}
   padding:11px 12px;border-bottom:1px solid var(--line);position:relative;border-radius:9px;
 }
 .led-row:last-child{border-bottom:none}
+/* listras: cada lançamento ganha a sua faixa, para o olho não pular de linha */
+.led-row:nth-child(even){background:var(--zebra)}
 .led-row:hover{background:var(--card)}
 .led-main{min-width:0;display:block}
 .led-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -276,7 +281,7 @@ button{font:inherit;color:inherit;font-family:var(--f)}
 .led-acts{
   position:absolute;right:12px;top:50%;transform:translateY(-50%);
   display:flex;gap:2px;opacity:0;transition:opacity .12s ease;
-  background:var(--card-2);padding-left:10px;
+  background:inherit;padding-left:10px;
 }
 .led-row:hover .led-acts,.led-row:focus-within .led-acts{opacity:1}
 @media (hover:none){
@@ -301,7 +306,9 @@ button{font:inherit;color:inherit;font-family:var(--f)}
 .cat-fill{height:100%;border-radius:20px;background:linear-gradient(90deg,var(--brand-2),var(--brand))}
 .cat-fill.credit{background:var(--pos)}
 .cat-pct{font-size:11.5px;color:var(--muted);margin-left:8px;font-weight:500}
-.cat-subs{margin-top:9px;padding-left:17px;display:flex;flex-direction:column;gap:7px}
+.cat-subs{margin-top:9px;padding-left:4px;display:flex;flex-direction:column;gap:0}
+.cat-subs>*{padding:6px 9px;border-radius:8px}
+.cat-subs>*:nth-child(odd){background:var(--zebra)}
 .cat-sub-item{display:flex;flex-direction:column;gap:1px}
 .cat-sub-group>summary{list-style:none;cursor:pointer}
 .cat-sub-group>summary::-webkit-details-marker{display:none}
@@ -309,7 +316,10 @@ button{font:inherit;color:inherit;font-family:var(--f)}
 .cat-caret{flex:none;width:0;height:0;border-left:4.5px solid var(--muted);border-top:3.5px solid transparent;border-bottom:3.5px solid transparent;transition:transform .15s ease}
 .cat-sub-group[open] .cat-caret{transform:rotate(90deg)}
 .cat-sub-count{font-size:10.5px;color:var(--muted);white-space:nowrap}
-.cat-sub-kids{margin:6px 0 2px 5px;padding-left:10px;border-left:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.cat-sub-kids{margin:5px 0 1px 4px;padding-left:9px;border-left:1px solid var(--line-2);display:flex;flex-direction:column;gap:0}
+.cat-sub-kids>*{padding:5px 8px;border-radius:7px}
+/* dentro do grupo a faixa é relativa ao que estiver atrás, que já pode ser listrado */
+.cat-sub-kids>*:nth-child(even){background:color-mix(in srgb,var(--ink) 7%,transparent)}
 .cat-sub-meta{font-size:10.5px;color:var(--muted);line-height:1.35}
 .cat-sub-row{display:flex;justify-content:space-between;gap:12px;align-items:baseline;font-size:12px}
 .cat-sub-name{min-width:0;display:flex;align-items:center;gap:6px}
