@@ -537,7 +537,17 @@ function renderCats(c){
     var neg = r.v < 0;
     var fill = 'width:'+w.toFixed(1)+'%';
 
-    var subs = (s.byCatSub[r.name]||[]).filter(function(x){ return x.v !== 0; });
+    /* Só parcelado vira uma linha por compra, porque aí a parcela diz algo. O que foi
+       à vista continua somado por nome: senão uma categoria do dia a dia viraria
+       uma lista de "Outros" repetidos. */
+    var avista = {};
+    var subs = [];
+    (s.byCatSub[r.name]||[]).forEach(function(x){
+      if(x.n > 1){ subs.push(x); return; }
+      if(!avista[x.name]){ avista[x.name] = { name:x.name, v:0, n:1 }; subs.push(avista[x.name]); }
+      avista[x.name].v += x.v;
+    });
+    subs = subs.filter(function(x){ return x.v !== 0; });
     /* As compras de mesmo nome ficam juntas, e os nomes que mais pesam vêm antes. */
     var peso = {};
     subs.forEach(function(x){ peso[x.name] = (peso[x.name]||0) + Math.abs(x.v); });
