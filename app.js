@@ -1308,17 +1308,18 @@ async function mergeCats(){
 }
 
 /* Uma vez só: o que estava sendo lançado na mão todo mês em Assinaturas vira cobrança
-   recorrente. A referência é a última cobrança de cada nome — ela passa a se repetir dali
-   em diante, e as anteriores ficam como histórico, sem duplicar nada. */
+   recorrente. Só entram as cobranças da fatura aberta — uma assinatura que parou meses
+   atrás não deve voltar a aparecer. Dessas, a última de cada nome passa a se repetir. */
 async function markRecurring(){
+  var cur = currentCycle(state.cfg);
   var ultima = {};
   state.entries.forEach(function(e){
     if(e.category !== RECUR_CAT || e.recurring || e.isCredit || e.installments > 1) return;
+    if(baseCycleOf(e) !== cur) return;
     var nome = (e.note||"").trim();
     if(!nome) return;   /* sem nome não dá para saber que assinatura é */
     var atual = ultima[nome];
-    if(!atual || baseCycleOf(e) > baseCycleOf(atual) ||
-       (baseCycleOf(e) === baseCycleOf(atual) && e.date > atual.date)) ultima[nome] = e;
+    if(!atual || e.date > atual.date) ultima[nome] = e;
   });
   var alvo = Object.keys(ultima).map(function(k){ return ultima[k]; });
   if(!alvo.length) return true;
