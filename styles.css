@@ -275,6 +275,7 @@ button{font:inherit;color:inherit;font-family:var(--f)}
 }
 .led-row:hover .chip{background:var(--card)}
 .chip.inst{color:var(--ink-2)}
+.chip.rec{color:var(--violet);background:color-mix(in srgb,var(--violet) 11%,transparent);box-shadow:none}
 .chip.credit{background:color-mix(in srgb,var(--pos) 12%,transparent);color:var(--pos);box-shadow:none}
 .led-acts{
   position:absolute;right:12px;top:50%;transform:translateY(-50%);

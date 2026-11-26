@@ -49,8 +49,11 @@ function dot(name){ return '<span class="dot" style="background:'+catColor(name)
    Versão 3 (17/11/2026): Amazon e Mercado Livre deixaram de ser categorias e passaram a ser
    subcategorias (a nota) dentro de Compras.
    Versão 4 (26/11/2026): o mesmo com academia, celular, internet e seguro do carro, que são
-   assinaturas; `as` é o nome curto com que cada uma passa a aparecer como subcategoria. */
-var CATS_VERSION = 4;
+   assinaturas; `as` é o nome curto com que cada uma passa a aparecer como subcategoria.
+   Versão 5 (26/11/2026): a última cobrança de cada assinatura virou recorrente, para não
+   precisar lançar na mão todo mês. */
+var CATS_VERSION = 5;
+var RECUR_CAT = "Assinaturas/Streaming";
 var CATS_MERGE = {
   "Amazon":             { to:"Compras", as:"Amazon" },
   "Mercado Livre":      { to:"Compras", as:"Mercado Livre" },
@@ -95,6 +98,7 @@ function cycleYM(c){ return { y:Math.floor(c/12), m:((c%12)+12)%12 }; }
 function dayDiff(a,b){ return Math.round((Date.UTC(b.y,b.m,b.d)-Date.UTC(a.y,a.m,a.d))/86400000); }
 function fmtDMY(o){ return pad(o.d)+"/"+pad(o.m+1)+"/"+o.y; }
 function fmtDM(o){ return pad(o.d)+"/"+pad(o.m+1); }
+function mesAno(iso){ var p = parseISO(iso); return p.y ? MONTHS_ABBR[p.m]+"/"+p.y : ""; }
 
 /* O ciclo é identificado pelo mês em que a fatura fecha. */
 function closingOf(c,cfg){ var ym=cycleYM(c); return { y:ym.y, m:ym.m, d:Math.min(cfg.closingDay, daysInMonth(ym.y,ym.m)) }; }
@@ -134,6 +138,10 @@ function normalize(id, o){
     installments: Math.min(72, Math.max(1, Math.round(Number(o.installments)||1))),
     note: typeof o.note === "string" ? o.note.slice(0,400) : "",
     cycle: cycle,
+    /* cobrança recorrente: repete todo mês a partir do ciclo em que foi lançada */
+    recurring: !!o.recurring,
+    endCycle: o.endCycle === null || o.endCycle === undefined || !isFinite(+o.endCycle) ? null : Math.round(+o.endCycle),
+    skips: Array.isArray(o.skips) ? o.skips.map(Number).filter(isFinite).map(Math.round) : [],
     createdAt: Number(o.createdAt) || 0
   };
 }
@@ -144,7 +152,7 @@ function entryToRow(e){
   return {
     id: e.id, user_id: session.user.id, amount: e.amount, date: e.date, time: e.time,
     category: e.category, is_credit: e.isCredit, installments: e.installments, note: e.note,
-    cycle: e.cycle,
+    cycle: e.cycle, recurring: e.recurring, end_cycle: e.endCycle, skips: e.skips,
     created_at: new Date(e.createdAt || Date.now()).toISOString()
   };
 }
@@ -152,7 +160,7 @@ function entryFromRow(r){
   return normalize(r.id, {
     amount: r.amount, date: r.date, time: r.time, category: r.category,
     isCredit: r.is_credit, installments: r.installments, note: r.note,
-    cycle: r.cycle,
+    cycle: r.cycle, recurring: r.recurring, endCycle: r.end_cycle, skips: r.skips,
     createdAt: r.created_at ? new Date(r.created_at).getTime() : 0
   });
 }
@@ -221,11 +229,24 @@ function baseCycleOf(e){
   return (e.cycle === null || e.cycle === undefined) ? cycleForDate(e.date, state.cfg) : e.cycle;
 }
 
-/* Cada compra ocupa `installments` faturas seguidas, a partir do ciclo em que foi lançada. */
+/* Uma cobrança recorrente vale nesta fatura? Vale da fatura em que foi lançada em diante,
+   até `endCycle` se houver, pulando os ciclos que o usuário excluiu um a um. */
+function recurresIn(e, c){
+  var b = baseCycleOf(e);
+  if(c < b) return false;
+  if(e.endCycle !== null && e.endCycle !== undefined && c > e.endCycle) return false;
+  return e.skips.indexOf(c) === -1;
+}
+/* Cada compra ocupa `installments` faturas seguidas, a partir do ciclo em que foi lançada;
+   a recorrente ocupa todas daí em diante. `n` é o total de parcelas, 0 quando não tem fim. */
 function occurrencesIn(c){
   var out = [];
   state.entries.forEach(function(e){
     var b = baseCycleOf(e);
+    if(e.recurring){
+      if(recurresIn(e, c)) out.push({ e:e, k:(c-b)+1, n:0, base:b });
+      return;
+    }
     if(c >= b && c < b + e.installments){
       out.push({ e:e, k:(c-b)+1, n:e.installments, base:b });
     }
@@ -251,7 +272,7 @@ function summarize(c){
        separadas, cada uma com a sua parcela. */
     var sub = (o.e.note||"").trim() || "Outros";
     if(!s.byCatSub[key]) s.byCatSub[key] = [];
-    s.byCatSub[key].push({ name:sub, v:signed, k:o.k, n:o.n, date:o.e.date,
+    s.byCatSub[key].push({ name:sub, v:signed, k:o.k, n:o.n, date:o.e.date, rec:!!o.e.recurring,
                            parcela:v, total:v*o.e.installments });
   });
   s.net = s.spend - s.credit;
@@ -284,7 +305,9 @@ function limitHeldBy(e){
   var cur = currentCycle(state.cfg);
   var b = baseCycleOf(e);
   var n = 0;
-  for(var k=0;k<e.installments;k++) if(b+k >= cur) n++;
+  /* a recorrente não tem fim, então reserva só a cobrança da fatura aberta */
+  if(e.recurring) n = recurresIn(e, cur) ? 1 : 0;
+  else for(var k=0;k<e.installments;k++) if(b+k >= cur) n++;
   return (e.isCredit ? -1 : 1) * e.amount * n;
 }
 /* Lançamentos registrados depois da sincronização — os únicos que o número do banco ainda não viu. */
@@ -499,13 +522,15 @@ function renderEntries(c){
 
     var cat = e.category || "Sem categoria";
     var chips = "";
-    if(e.installments > 1) chips += '<span class="chip inst">' + o.k + "/" + o.n + "</span>";
+    if(e.recurring) chips += '<span class="chip rec">mensal</span>';
+    else if(e.installments > 1) chips += '<span class="chip inst">' + o.k + "/" + o.n + "</span>";
     if(e.isCredit) chips += '<span class="chip credit">estorno</span>';
 
     var sub = [];
     if(e.time) sub.push(e.time);
-    if(o.k > 1) sub.push("compra em " + fmtDM(p));
-    if(e.installments > 1) sub.push("total " + money(e.amount * e.installments));
+    if(e.recurring) sub.push("todo mês desde " + mesAno(e.date));
+    else if(o.k > 1) sub.push("compra em " + fmtDM(p));
+    if(!e.recurring && e.installments > 1) sub.push("total " + money(e.amount * e.installments));
     if(e.note) sub.push(esc(e.note));
 
     html += '<div class="led-row">'
@@ -530,34 +555,46 @@ function subAmt(v, pct){
   return '<span class="cat-sub-amt'+(neg?" credit":"")+'">'+(neg?"− "+moneyAbs(v):money(v))
     + (pct === null ? "" : '<span class="cat-sub-pct">'+pct+"%</span>") + "</span>";
 }
-/* Uma linha de subcategoria. Com `parc`, ela representa uma compra parcelada: ganha o
-   chip da parcela e, embaixo, quantas parcelas são e o total da compra. */
-function subItem(label, v, pct, parc, kid){
-  var chip = parc ? '<span class="chip inst">'+parc.k+"/"+parc.n+"</span>" : "";
-  var meta = "";
-  if(parc){
+/* Uma linha de subcategoria. Com `det`, ela representa uma cobrança que se repete — uma
+   compra parcelada ou uma recorrente — e ganha o chip e a explicação embaixo. */
+function subItem(label, v, pct, det, kid){
+  var chip = "", meta = "";
+  if(det && det.rec){
+    chip = '<span class="chip rec">mensal</span>';
+    meta = '<div class="cat-sub-meta">todo mês desde ' + mesAno(det.date) + "</div>";
+  }else if(det){
+    chip = '<span class="chip inst">'+det.k+"/"+det.n+"</span>";
     meta = '<div class="cat-sub-meta">'
-      + (kid ? "" : "compra em " + fmtDM(parseISO(parc.date)) + " · ")
-      + parc.n + "x de " + moneyAbs(parc.parcela) + " · total " + moneyAbs(parc.total) + "</div>";
+      + (kid ? "" : "compra em " + fmtDM(parseISO(det.date)) + " · ")
+      + det.n + "x de " + moneyAbs(det.parcela) + " · total " + moneyAbs(det.total) + "</div>";
   }
   return '<div class="cat-sub-item'+(kid?" is-kid":"")+'"><div class="cat-sub-row">'
     + '<span class="cat-sub-name"><span class="cat-sub-label">'+esc(label)+"</span>"+chip+"</span>"
     + subAmt(v, pct) + "</div>" + meta + "</div>";
 }
-/* Quando o mesmo nome tem mais de uma compra parcelada, as linhas viram um grupo que
-   abre e fecha: fechado mostra só o que o nome pesa nesta fatura; aberto, cada compra
-   com a sua parcela. */
+/* O que o grupo reúne, em palavras: "2 parceladas", "1 mensal + à vista"... */
+function grupoResumo(g){
+  var p = 0, r = 0;
+  g.detalhes.forEach(function(x){ if(x.rec) r++; else p++; });
+  var partes = [];
+  if(p) partes.push(p + (p>1 ? " parceladas" : " parcelada"));
+  if(r) partes.push(r + (r>1 ? " mensais" : " mensal"));
+  if(g.avista !== 0) partes.push("à vista");
+  return partes.join(" + ");
+}
+/* Quando o mesmo nome tem mais de uma cobrança que se repete, as linhas viram um grupo
+   que abre e fecha: fechado mostra só o que o nome pesa nesta fatura; aberto, cada
+   cobrança com a sua parcela ou a data em que a recorrência começou. */
 function subGroup(cat, g, pct){
   var key = cat + "\u0000" + g.name;
-  var qtd = g.parcelados.length;
   return '<details class="cat-sub-group" data-key="'+esc(key)+'"'+(openSubs[key]?" open":"")+'>'
     + '<summary class="cat-sub-row"><span class="cat-sub-name">'
     + '<span class="cat-caret" aria-hidden="true"></span>'
     + '<span class="cat-sub-label">'+esc(g.name)+"</span>"
-    + '<span class="cat-sub-count">'+qtd+(qtd>1?" parceladas":" parcelada")+(g.avista!==0?" + à vista":"")+"</span></span>"
+    + '<span class="cat-sub-count">'+grupoResumo(g)+"</span></span>"
     + subAmt(g.v, pct) + "</summary>"
     + '<div class="cat-sub-kids">'
-    + g.parcelados.map(function(x){ return subItem(fmtDM(parseISO(x.date)), x.v, null, x, true); }).join("")
+    + g.detalhes.map(function(x){ return subItem(fmtDM(parseISO(x.date)), x.v, null, x, true); }).join("")
     + (g.avista !== 0 ? subItem("à vista", g.avista, null, null, true) : "")
     + "</div></details>";
 }
@@ -585,28 +622,29 @@ function renderCats(c){
     var fill = 'width:'+w.toFixed(1)+'%';
 
     /* Cada nome é um grupo. O que foi à vista entra somado — uma lista de "Outros"
-       repetidos não diz nada — e cada compra parcelada entra inteira, com a sua parcela. */
+       repetidos não diz nada — e cada cobrança que se repete (parcelada ou mensal)
+       entra inteira, com a sua parcela ou a data em que começou. */
     var grupos = [], porNome = {};
     (s.byCatSub[r.name]||[]).forEach(function(x){
       var g = porNome[x.name];
-      if(!g){ g = porNome[x.name] = { name:x.name, v:0, parcelados:[], avista:0 }; grupos.push(g); }
+      if(!g){ g = porNome[x.name] = { name:x.name, v:0, detalhes:[], avista:0 }; grupos.push(g); }
       g.v += x.v;
-      if(x.n > 1) g.parcelados.push(x); else g.avista += x.v;
+      if(x.n > 1 || x.rec) g.detalhes.push(x); else g.avista += x.v;
     });
     grupos = grupos.filter(function(g){ return g.v !== 0; });
-    grupos.forEach(function(g){ g.parcelados.sort(function(a,b){ return Math.abs(b.v) - Math.abs(a.v); }); });
+    grupos.forEach(function(g){ g.detalhes.sort(function(a,b){ return Math.abs(b.v) - Math.abs(a.v); }); });
     /* os nomes que mais pesam vêm antes */
     grupos.sort(function(a,b){ return Math.abs(b.v) - Math.abs(a.v) || a.name.localeCompare(b.name); });
 
     var subHtml = "";
     /* Um nome só e nada parcelado: a linha repetiria o total da categoria. */
-    if(grupos.length > 1 || (grupos.length === 1 && grupos[0].parcelados.length)){
+    if(grupos.length > 1 || (grupos.length === 1 && grupos[0].detalhes.length)){
       var subTotalAbs = grupos.reduce(function(a,g){ return a + Math.abs(g.v); }, 0) || 1;
       subHtml = '<div class="cat-subs">' + grupos.map(function(g){
         var spct = Math.round((Math.abs(g.v)/subTotalAbs)*100);
-        /* Uma compra parcelada sozinha cabe na própria linha; não vale um grupo. */
-        if(g.parcelados.length === 1 && g.avista === 0) return subItem(g.name, g.v, spct, g.parcelados[0], false);
-        if(!g.parcelados.length) return subItem(g.name, g.v, spct, null, false);
+        /* Uma cobrança sozinha cabe na própria linha; não vale um grupo. */
+        if(g.detalhes.length === 1 && g.avista === 0) return subItem(g.name, g.v, spct, g.detalhes[0], false);
+        if(!g.detalhes.length) return subItem(g.name, g.v, spct, null, false);
         return subGroup(r.name, g, spct);
       }).join("") + "</div>";
     }
@@ -710,6 +748,21 @@ $("fInst").addEventListener("click", function(){
   setOn(this, on);
   $("fInstWrap").hidden = !on;
   if(on && (+$("fInstN").value) < 2) $("fInstN").value = 2;
+  /* parcelado tem fim, recorrente não: um desliga o outro */
+  if(on) setRec(false);
+  syncInstHint();
+});
+/* Recorrente: a mesma cobrança todo mês, sem fim definido. */
+function setRec(on){
+  setOn($("fRec"), on);
+  $("fRecHint").hidden = !on;
+  if(on){
+    setOn($("fInst"), false);
+    $("fInstWrap").hidden = true;
+  }
+}
+$("fRec").addEventListener("click", function(){
+  setRec(!isOn(this));
   syncInstHint();
 });
 $("fInstN").addEventListener("input", syncInstHint);
@@ -725,7 +778,8 @@ function syncInstHint(){
   var existing = editingId ? state.entries.find(function(x){ return x.id===editingId; }) : null;
   var b = existing ? baseCycleOf(existing) : state.view;
   var where = (credit ? "Crédito entra na fatura de " : "Entra na fatura de ") + cycleName(b,cfg);
-  if(n > 1) where += ", indo até a de " + cycleName(b+n-1,cfg);
+  if(isOn($("fRec"))) where += " e se repete todo mês daí em diante";
+  else if(n > 1) where += ", indo até a de " + cycleName(b+n-1,cfg);
   $("fWhere").textContent = where + ".";
 }
 
@@ -837,6 +891,7 @@ function openEntry(entry){
     setOn($("fInst"), entry.installments > 1);
     $("fInstWrap").hidden = entry.installments <= 1;
     $("fInstN").value = Math.max(2, entry.installments);
+    setRec(!!entry.recurring);
     $("fNote").value = entry.note || "";
   }else{
     setCents($("fAmount"), 0);
@@ -847,6 +902,7 @@ function openEntry(entry){
     setOn($("fInst"), false);
     $("fInstWrap").hidden = true;
     $("fInstN").value = 2;
+    setRec(false);
     $("fNote").value = "";
   }
   syncInstHint();
@@ -860,7 +916,8 @@ function collect(){
   if(amount <= 0){ toast("Informe o valor da parcela."); $("fAmount").focus(); return null; }
   var date = $("fDate").value;
   if(!date){ toast("Informe a data da compra."); $("fDate").focus(); return null; }
-  var n = $("fInstWrap").hidden ? 1 : Math.min(72, Math.max(2, Math.round(+$("fInstN").value || 2)));
+  var rec = isOn($("fRec"));
+  var n = (rec || $("fInstWrap").hidden) ? 1 : Math.min(72, Math.max(2, Math.round(+$("fInstN").value || 2)));
   var existing = editingId ? state.entries.find(function(x){ return x.id===editingId; }) : null;
   return normalize(editingId || newId(), {
     amount: amount,
@@ -870,6 +927,10 @@ function collect(){
     isCredit: isOn($("fCredit")),
     installments: n,
     note: $("fNote").value.trim(),
+    recurring: rec,
+    /* fim e faturas puladas só fazem sentido enquanto a recorrência existir */
+    endCycle: rec && existing ? existing.endCycle : null,
+    skips: rec && existing ? existing.skips : [],
     /* fica preso na fatura em que foi lançado — editar a data não deve pular o lançamento de fatura. */
     cycle: existing ? baseCycleOf(existing) : state.view,
     createdAt: existing ? existing.createdAt || Date.now() : Date.now()
@@ -882,8 +943,9 @@ function saveEntry(keepOpen){
   putEntry(e);
   var cyc = e.cycle;
   toast(editingId ? "Lançamento atualizado." :
-    (e.installments > 1 ? e.installments+" parcelas lançadas a partir da fatura de "+cycleName(cyc,state.cfg)+"."
-                        : "Lançado na fatura de "+cycleName(cyc,state.cfg)+"."));
+    (e.recurring ? "Cobrança mensal criada a partir da fatura de "+cycleName(cyc,state.cfg)+"."
+      : e.installments > 1 ? e.installments+" parcelas lançadas a partir da fatura de "+cycleName(cyc,state.cfg)+"."
+                           : "Lançado na fatura de "+cycleName(cyc,state.cfg)+"."));
   if(keepOpen){
     editingId = null;
     setCents($("fAmount"), 0);
@@ -893,6 +955,7 @@ function saveEntry(keepOpen){
     setOn($("fInst"), false);
     $("fInstWrap").hidden = true;
     $("fInstN").value = 2;
+    setRec(false);
     syncInstHint();
     hideNoteSuggest();
     $("fAmount").focus();
@@ -906,18 +969,60 @@ $("entryCancel").addEventListener("click", function(){ closeSheet("entryScrim");
 $("entryClose").addEventListener("click", function(){ closeSheet("entryScrim"); });
 
 /* ---------- excluir ---------- */
-var deletingId = null;
+var deletingId = null, deletingCycle = null;
+function cloneEntry(e){ return normalize(e.id, e); }
+function deletingEntry(){
+  return deletingId ? state.entries.find(function(x){ return x.id===deletingId; }) : null;
+}
 function askDelete(id){
   var e = state.entries.find(function(x){ return x.id===id; });
   if(!e) return;
   deletingId = id;
-  $("delBody").textContent = e.installments > 1
-    ? "Esta compra ocupa "+e.installments+" faturas ("+money(e.amount)+" cada, "+money(e.amount*e.installments)+" no total). Excluir remove todas as parcelas."
-    : "Excluir "+money(e.amount)+" em "+(e.category || "sem categoria")+"?";
+  /* a fatura que está na tela é a que o usuário quer tirar, se escolher só uma */
+  deletingCycle = state.view;
+  $("delTitle").textContent = e.recurring ? "Excluir cobrança mensal" : "Excluir lançamento";
+  $("delOnlyThis").hidden = !e.recurring;
+  $("delConfirm").textContent = e.recurring ? "Esta e as próximas" : "Excluir";
+  if(e.recurring){
+    $("delBody").textContent = "Esta cobrança de "+money(e.amount)+" se repete todo mês."
+      + " Dá para tirar só a fatura de "+cycleName(deletingCycle,state.cfg)
+      + " ou encerrar a recorrência desta fatura em diante — as anteriores ficam como estão.";
+  }else{
+    $("delBody").textContent = e.installments > 1
+      ? "Esta compra ocupa "+e.installments+" faturas ("+money(e.amount)+" cada, "+money(e.amount*e.installments)+" no total). Excluir remove todas as parcelas."
+      : "Excluir "+money(e.amount)+" em "+(e.category || "sem categoria")+"?";
+  }
   openSheet("delScrim");
 }
 $("delConfirm").addEventListener("click", function(){
-  if(deletingId){ dropEntry(deletingId); toast("Lançamento excluído."); }
+  var e = deletingEntry();
+  if(e && e.recurring){
+    var b = baseCycleOf(e);
+    if(deletingCycle <= b){
+      dropEntry(e.id);
+      toast("Cobrança mensal excluída.");
+    }else{
+      var novo = cloneEntry(e);
+      novo.endCycle = deletingCycle - 1;
+      novo.skips = e.skips.filter(function(c){ return c < deletingCycle; });
+      putEntry(novo);
+      toast("Cobrança encerrada a partir da fatura de "+cycleName(deletingCycle,state.cfg)+".");
+    }
+  }else if(e){
+    dropEntry(e.id);
+    toast("Lançamento excluído.");
+  }
+  deletingId = null;
+  closeSheet("delScrim");
+});
+$("delOnlyThis").addEventListener("click", function(){
+  var e = deletingEntry();
+  if(e && e.recurring){
+    var novo = cloneEntry(e);
+    if(novo.skips.indexOf(deletingCycle) === -1) novo.skips = novo.skips.concat([deletingCycle]);
+    putEntry(novo);
+    toast("Fora da fatura de "+cycleName(deletingCycle,state.cfg)+"; os outros meses seguem.");
+  }
   deletingId = null;
   closeSheet("delScrim");
 });
@@ -1202,6 +1307,37 @@ async function mergeCats(){
   return true;
 }
 
+/* Uma vez só: o que estava sendo lançado na mão todo mês em Assinaturas vira cobrança
+   recorrente. A referência é a última cobrança de cada nome — ela passa a se repetir dali
+   em diante, e as anteriores ficam como histórico, sem duplicar nada. */
+async function markRecurring(){
+  var ultima = {};
+  state.entries.forEach(function(e){
+    if(e.category !== RECUR_CAT || e.recurring || e.isCredit || e.installments > 1) return;
+    var nome = (e.note||"").trim();
+    if(!nome) return;   /* sem nome não dá para saber que assinatura é */
+    var atual = ultima[nome];
+    if(!atual || baseCycleOf(e) > baseCycleOf(atual) ||
+       (baseCycleOf(e) === baseCycleOf(atual) && e.date > atual.date)) ultima[nome] = e;
+  });
+  var alvo = Object.keys(ultima).map(function(k){ return ultima[k]; });
+  if(!alvo.length) return true;
+  var rows = alvo.map(function(e){
+    var novo = normalize(e.id, e);
+    novo.recurring = true;
+    novo.endCycle = null;
+    novo.skips = [];
+    return entryToRow(novo);
+  });
+  for(var i=0;i<rows.length;i+=200){
+    var chunk = await sb.from("entries").upsert(rows.slice(i, i+200));
+    if(chunk.error){ saveFail(chunk.error, "as cobranças mensais"); return false; }
+  }
+  alvo.forEach(function(e){ e.recurring = true; e.endCycle = null; e.skips = []; });
+  toast(alvo.length + (alvo.length > 1 ? " assinaturas agora se repetem todo mês." : " assinatura agora se repete todo mês."));
+  return true;
+}
+
 async function enterApp(){
   var res = await Promise.all([
     sb.from("settings").select("*").maybeSingle(),
@@ -1224,7 +1360,11 @@ async function enterApp(){
   /* A fusão é tentada em toda carga, não só quando a versão muda: sem nada para mover
      ela é só um filtro em memória, e assim nenhum lançamento fica para trás se a versão
      tiver sido gravada antes da hora ou se algo antigo for reimportado depois. */
-  if(await mergeCats()){
+  var fundiu = await mergeCats();
+  /* A fusão precisa ter rodado antes: só aí as assinaturas estão todas na mesma categoria.
+     Esta roda uma vez, marcada pela versão, para não voltar a mexer no que o usuário mudar. */
+  var marcou = state.cfg.catsVersion >= 5 ? true : await markRecurring();
+  if(fundiu && marcou){
     /* a lista do usuário é preservada: só saem os nomes que viraram subcategoria */
     var limpa = state.cfg.categories.filter(function(c){ return !CATS_MERGE[c]; });
     if(limpa.length !== state.cfg.categories.length){ state.cfg.categories = limpa; dirty = true; }

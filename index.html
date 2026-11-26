@@ -246,6 +246,12 @@
       <span class="hint" id="fInstHint">Total lançado: 2 x R$ 0,00 = R$ 0,00</span>
     </div>
 
+    <div class="switch-row">
+      <span class="t">Pagamento recorrente</span>
+      <button class="switch" id="fRec" role="switch" aria-checked="false" aria-label="Pagamento recorrente"></button>
+    </div>
+    <span class="hint" id="fRecHint" hidden>Cobra todo mês, na mesma data, sem fim definido — como um parcelamento que não acaba.</span>
+
     <div class="field">
       <label for="fNote">Observação</label>
       <div class="note-wrap">
@@ -355,7 +361,7 @@
 
 <!-- ============ excluir ============ -->
 <div class="scrim" id="delScrim" hidden>
-  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="delTitle" style="max-width:400px">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="delTitle" style="max-width:460px">
     <div class="sheet-head">
       <h2 id="delTitle">Excluir lançamento</h2>
       <button class="close" id="delClose" aria-label="Fechar">×</button>
@@ -363,6 +369,7 @@
     <p id="delBody" style="color:var(--ink-2);font-size:14px"></p>
     <div class="sheet-foot">
       <button class="btn ghost spacer" id="delCancel" type="button">Cancelar</button>
+      <button class="btn" id="delOnlyThis" type="button" hidden>Só este mês</button>
       <button class="btn danger" id="delConfirm" type="button">Excluir</button>
     </div>
   </div>
@@ -394,6 +401,6 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <!-- a versão no endereço evita que o navegador sirva um app.js velho do cache -->
-<script type="module" src="./app.js?v=9"></script>
+<script type="module" src="./app.js?v=10"></script>
 </body>
 </html>
