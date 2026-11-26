@@ -9,7 +9,6 @@ const sb = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 /* ============================ modelo ============================ */
 
 var CAT_SEED = [
-  ["Academia/Personal","#3B82F6"],
   ["Aluguel","#A855F7"],
   ["Assinaturas/Streaming","#3B82F6"],
   ["Cartão ADC Rhaiane","#64748B"],
@@ -20,12 +19,10 @@ var CAT_SEED = [
   ["Energia","#84CC16"],
   ["Farmácia","#EF4444"],
   ["Financiamento Carro","#EC4899"],
-  ["Fluke (celular)","#4ADE80"],
   ["iFood/Lanches","#EF4444"],
   ["Impostos (outros)","#F97316"],
   ["IPTU/Lixo","#3B82F6"],
   ["IPVA/impostos Carro","#2DD4BF"],
-  ["LOGA internet","#64748B"],
   ["Médicos/Saúde","#38BDF8"],
   ["Mercado/Alimentação","#EF4444"],
   ["Padaria","#4ADE80"],
@@ -33,8 +30,7 @@ var CAT_SEED = [
   ["Poupança","#4ADE80"],
   ["Seguro Celular","#3B82F6"],
   ["Tag Sem Parar (crédito)","#F97316"],
-  ["Uber","#64748B"],
-  ["Youse Seguro Carro","#A855F7"]
+  ["Uber","#64748B"]
 ];
 var DEFAULT_CATS = CAT_SEED.map(function(p){ return p[0]; });
 var CAT_COLORS = {};
@@ -51,9 +47,18 @@ function dot(name){ return '<span class="dot" style="background:'+catColor(name)
 
 /* Lista de categorias substituída em 01/09/2026; a versão força a troca em quem já tinha a lista antiga.
    Versão 3 (17/11/2026): Amazon e Mercado Livre deixaram de ser categorias e passaram a ser
-   subcategorias (a nota) dentro de Compras. */
-var CATS_VERSION = 3;
-var CATS_MERGE = { "Amazon":"Compras", "Mercado Livre":"Compras" };
+   subcategorias (a nota) dentro de Compras.
+   Versão 4 (26/11/2026): o mesmo com academia, celular, internet e seguro do carro, que são
+   assinaturas; `as` é o nome curto com que cada uma passa a aparecer como subcategoria. */
+var CATS_VERSION = 4;
+var CATS_MERGE = {
+  "Amazon":             { to:"Compras", as:"Amazon" },
+  "Mercado Livre":      { to:"Compras", as:"Mercado Livre" },
+  "Academia/Personal":  { to:"Assinaturas/Streaming", as:"Academia" },
+  "Fluke (celular)":    { to:"Assinaturas/Streaming", as:"Fluke" },
+  "LOGA internet":      { to:"Assinaturas/Streaming", as:"LOGA" },
+  "Youse Seguro Carro": { to:"Assinaturas/Streaming", as:"Youse" }
+};
 
 /* Limite informado pelo banco em 01/09/2026. Os números do banco JÁ contemplam todos os
    lançamentos existentes, então valem na íntegra: nada é somado nem descontado deles.
@@ -1174,24 +1179,25 @@ $("btnOut").addEventListener("click", async function(){
 /* ============================ carga ============================ */
 
 /* Cada categoria de CATS_MERGE vira subcategoria da categoria de destino: o lançamento
-   continua o mesmo, só muda de categoria e leva o nome antigo para a nota — que é o que
+   continua o mesmo, só muda de categoria e ganha na nota o nome do mapa — que é o que
    o app mostra como subcategoria. Só devolve true (e deixa gravar a versão) se o banco
    aceitar todas as linhas; senão a migração tenta de novo na próxima abertura. */
 async function mergeCats(){
   var alvo = state.entries.filter(function(e){ return CATS_MERGE[e.category]; });
   if(!alvo.length) return true;
   var rows = alvo.map(function(e){
+    var m = CATS_MERGE[e.category];
     var novo = normalize(e.id, e);
     novo.createdAt = e.createdAt;
-    novo.note = e.category;
-    novo.category = CATS_MERGE[e.category];
+    novo.note = m.as;
+    novo.category = m.to;
     return entryToRow(novo);
   });
   for(var i=0;i<rows.length;i+=200){
     var chunk = await sb.from("entries").upsert(rows.slice(i, i+200));
     if(chunk.error){ saveFail(chunk.error, "a troca de categorias"); return false; }
   }
-  alvo.forEach(function(e){ e.note = e.category; e.category = CATS_MERGE[e.category]; });
+  alvo.forEach(function(e){ var m = CATS_MERGE[e.category]; e.note = m.as; e.category = m.to; });
   toast(alvo.length + (alvo.length > 1 ? " lançamentos viraram subcategoria." : " lançamento virou subcategoria."));
   return true;
 }
